@@ -2,11 +2,14 @@
 
 A small Node Exporter to scrape Sensor data from a D1 Mini Board or a ESP8266-01 Board by a Prometheus instance.
 
+
+### Installation
+
 Clone this Repository:
 
     git clone https://github.com/vaddi/d1mini_node.git
 
-Or just copy the plain Text from this Files:
+Or just copy the plain Text from this Files into you Adruino IDE Editor (Remember to choose the right Board!) and flash your Device:
 
 - [d1mini_node][]  
 - [esp8266-01][]  
@@ -80,7 +83,7 @@ Open a Webbrowser and try to connect to your Node:
 
 	http://esp01.speedport.ip/
 	
-Navigate through the Page, checkout the Metrics.  
+Navigate through the Page, checkout the Metrics or Save some Settings.  
 
 
 ## Troubleshooting ##
@@ -89,9 +92,8 @@ When no connection to the Node come up:
 
 - Try to connect to the IP instead of DNS Name to reach the Device.
 - See in your Router DNS Table to get sure the Node will get an IP Adress.
-- try to disable Silent Mode to ensure the Node will connect to the Wifi and doesnt run in Setup Mode (LED blinks 3 times). It will blink on connecting to wifi and when processing a request.
+- Try to disable Silent Mode to ensure the Node will connect to the Wifi and doesnt run in Setup Mode (LED blinks 3 times). The Device will blink if a client connecting to the wifi and when processing a request.
 - Check Pins, make sure there are no shortcuits or other pin missplacements.
-- Check Pinout of Sensor and the D1 Board.  
 - On D1mini Boards you can enable `debug` and plugin via USB. Then read the Debug output by Arduino IDE Serial or via Terminal by `screen /dev/ttyUSB1 9600`.  
 
 
@@ -101,14 +103,38 @@ When no connection to the Node come up:
 Just add your device as a Target to your `prometheus.yml` File. I've using here a Network which searchdomain `speedport.ip`, just change to your Network or use IPs instead of DNS Names.
 
 ```yaml
+...
   - job_name: 'esps'
     scrape_interval: 5m
+    scrape_timeout: 1m
     static_configs:
       - targets: ['esp01.speedport.ip:80'],
       - targets: ['esp02.speedport.ip:80'],
       - targets: ['esp03.speedport.ip:80']
-      ...
+...
 ```
+
+## Dashboards ##
+
+I've created some Dashboards, maybe there helpfull when begin to build some own Dashboards.
+
+- ESP Full Dashboard: [dashboard][]
+- Dashboard Example: [dashboard-example][]
+
+
+## Screenshots ##
+
+The Webinterface:  
+![webinterface](https://github.com/vaddi/d1mini_node/assets/images/webinterface.png "Webinterface")  
+Screenshot from the Setuppage. here you can configure you Device.
+
+ESP Full Dashboard:  
+![dashboard_full](https://github.com/vaddi/d1mini_node/assets/images/dashboard.png "Dashboard Full")  
+A Dashboard witch has all Metrics available. So you have to just enable a Sensor on your ESP Device to see the Sensordata. The Sensors present will get their Value by they're scrape time.
+
+A Dashboard Example:  
+![dashboard_example](https://github.com/vaddi/d1mini_node/assets/images/dashboard_example.png "Dashboard Example")  
+A Dashboard wich combines some Metrics to get a complete Overview over you flat or other Places. Just place some Sensors and feel free to combine or calc average from them.
 
 
 ## Links ##
@@ -121,3 +147,5 @@ Just add your device as a Target to your `prometheus.yml` File. I've using here 
 [Geigercounter]: https://mightyohm.com/geiger
 [d1mini_node]: https://github.com/vaddi/d1mini_node/blob/master/d1mini_node/d1mini_node.ino
 [esp8266-01]: https://github.com/vaddi/d1mini_node/blob/master/esp8266-01/esp8266-01_node.ino
+[dashboard]: https://github.com/vaddi/d1mini_node/assets/dashboards/dashboard_full.json
+[dashboard-example]: https://github.com/vaddi/d1mini_node/assets/dashboards/dashboard_combined.json
