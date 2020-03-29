@@ -125,15 +125,15 @@ I've created some Dashboards, maybe there helpfull when begin to build some own 
 ## Screenshots ##
 
 The Webinterface:  
-![webinterface](https://github.com/vaddi/d1mini_node/assets/images/webinterface.png "Webinterface")  
+![webinterface](https://github.com/vaddi/d1mini_node/blob/master/assets/images/webinterface.png "Webinterface")  
 Screenshot from the Setuppage. here you can configure you Device.
 
 ESP Full Dashboard:  
-![dashboard_full](https://github.com/vaddi/d1mini_node/assets/images/dashboard.png "Dashboard Full")  
+![dashboard_full](https://github.com/vaddi/d1mini_node/blob/master/assets/images/dashboard_full.png "Dashboard Full")  
 A Dashboard witch has all Metrics available. So you have to just enable a Sensor on your ESP Device to see the Sensordata. The Sensors present will get their Value by they're scrape time.
 
 A Dashboard Example:  
-![dashboard_example](https://github.com/vaddi/d1mini_node/assets/images/dashboard_example.png "Dashboard Example")  
+![dashboard_example](https://github.com/vaddi/d1mini_node/blob/master/assets/images/dashboard_example.png "Dashboard Example")  
 A Dashboard wich combines some Metrics to get a complete Overview over you flat or other Places. Just place some Sensors and feel free to combine or calc average from them.
 
 
