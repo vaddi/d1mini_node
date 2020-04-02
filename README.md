@@ -137,14 +137,28 @@ A Dashboard Example:
 A Dashboard wich combines some Metrics to get a complete Overview over you flat or other Places. Just place some Sensors and feel free to combine or calc average from them.
 
 
+## Comming Soon ##
+
+Some Ideas which i want to implement in the future.
+
+- Basic Auth & API-Token based Authentification for the Metrics
+- Better parsing of the Geigercounter Data
+- Parsing more values from mcp to flatten the output Data
+
+
 ## Links ##
 
 * [DHT-Board][]
 * [Geigercounter][]
+* [D1Mini-Case][]
+* [ESP8266-01-Case][]
 
 
 [DHT-Board]: https://www.amazon.de/gp/product/B07L2TWS5G
 [Geigercounter]: https://mightyohm.com/geiger
+[D1Mini-Case]: https://www.thingiverse.com/thing:3698982
+[ESP8266-01-Case]: https://www.thingiverse.com/thing:4096863
+
 [d1mini_node]: https://github.com/vaddi/d1mini_node/blob/master/d1mini_node/d1mini_node.ino
 [esp8266-01]: https://github.com/vaddi/d1mini_node/blob/master/esp8266-01/esp8266-01_node.ino
 [dashboard]: https://github.com/vaddi/d1mini_node/assets/dashboards/dashboard_full.json
