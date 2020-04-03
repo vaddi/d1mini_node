@@ -136,6 +136,16 @@ A Dashboard Example:
 ![dashboard_example](https://github.com/vaddi/d1mini_node/blob/master/assets/images/dashboard_example.png "Dashboard Example")  
 A Dashboard wich combines some Metrics to get a complete Overview over you flat or other Places. Just place some Sensors and feel free to combine or calc average from them.
 
+Devices and Cases:
+![devices](https://github.com/vaddi/d1mini_node/blob/master/assets/images/devices.png "Devices")  
+Some Basic Devices, only Temperature, Humidity and with the bme280 Sensor also Pressure. Beside the printed Cases (see [links](https://github.com/vaddi/d1mini_node#links) below).
+
+Bathroom Device:
+![devices](https://github.com/vaddi/d1mini_node/blob/master/assets/images/devices_bathroom.png "Bathroom Device")  
+A Node which get Metrics from my Bathroom. Here also with a printed case and a MQ135 behind.
+
+There are some More, just take a look into the [assets/images](https://github.com/vaddi/d1mini_node/blob/master/assets/images/) Folder.
+
 
 ## Comming Soon ##
 
@@ -148,16 +158,37 @@ Some Ideas which i want to implement in the future.
 
 ## Links ##
 
-* [DHT-Board][]
+##### Boards & other Chips (Amazon): #####
+
+* [D1Mini](https://www.amazon.de/gp/product/B0754W6Z2F)
+* [esp8266-01](https://www.amazon.de/gp/product/B074RLG5TC)
+* [mcp3008](https://www.amazon.de/gp/product/B0722FJRSQ)
+
+##### Sensors: #####
+
+* [mq135](https://www.amazon.de/gp/product/B07V9WCQL4)
+* [bme280](https://www.amazon.de/gp/product/B07HMQMW6M)
+* [ds18b20](https://www.amazon.de/gp/product/B07DN47YWW)
+ * Analog Sensors which can connected to the MCP3008 ADC
+ * [moisture](https://www.amazon.de/gp/product/B07V6M5C4H)
+ * [ph-node](https://www.amazon.de/gp/product/B01F1RRFFY)
+ * [brightness-meter](https://www.amazon.de/gp/product/B01N5KZCQJ)
+ * Find a lot more Sensors on [google](https://www.google.com/search?q=analog+sensor+arduino) and [amazon](https://www.amazon.de/s?k=analog+sensor). Mostly any kind of analoge Sensor should run.
+* [DHT-Board][]. You can de-soldering the sensor to a dht22.
 * [Geigercounter][]
+
+##### Cases (www.thingiverse.com): #####
+
 * [D1Mini-Case][]
 * [ESP8266-01-Case][]
+* [MQ135-Case][]
 
 
 [DHT-Board]: https://www.amazon.de/gp/product/B07L2TWS5G
 [Geigercounter]: https://mightyohm.com/geiger
 [D1Mini-Case]: https://www.thingiverse.com/thing:3698982
 [ESP8266-01-Case]: https://www.thingiverse.com/thing:4096863
+[MQ135-Case]: https://www.thingiverse.com/thing:2850597
 
 [d1mini_node]: https://github.com/vaddi/d1mini_node/blob/master/d1mini_node/d1mini_node.ino
 [esp8266-01]: https://github.com/vaddi/d1mini_node/blob/master/esp8266-01/esp8266-01_node.ino
