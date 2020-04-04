@@ -15,6 +15,11 @@ Or just copy the plain Text from this Files into you Adruino IDE Editor (Remembe
 - [esp8266-01][]  
 
 
+Pinout for the D1 Mini  
+![d1mini_pinout](https://github.com/vaddi/d1mini_node/blob/master/assets/images/d1mini_pinout.png "D1 Mini Pinout")  
+There is also a [svg](https://github.com/vaddi/d1mini_node/blob/master/assets/images/d1mini_pinout.svg) Version available.  
+
+
 ## Features ##
 
 - Silent Mode, disable LED blink
