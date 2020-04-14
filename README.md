@@ -1,6 +1,6 @@
 # D1 Mini Node #
 
-A small Node Exporter to scrape Sensor data from a D1 Mini Board or a ESP8266-01 Board by a Prometheus instance.
+A small Node Exporter to serve Sensor data from a D1 Mini Board or a ESP8266-01 Board to a Prometheus instance.
 
 
 ### Installation
@@ -23,10 +23,12 @@ There is also a [svg](https://github.com/vaddi/d1mini_node/blob/master/assets/im
 ## Features ##
 
 - Silent Mode, disable LED blink
-- Use Sensors by simple enable/disable them into the webgui/code
-- Initial Setup via Wifi Access Point whith Captive Portal
-- Static IP or DHCP Client Mode
-- Prometheus ready /metrics Endpoint  
+- Use Sensors by simple enable/disable them into the webgui/code (you still have to plug them ;)
+- Initial Setup via Wifi Access Point with Captive Portal
+- DHCP Client or Static IP Modes
+- SecPush, Disable all auth for given seconds after booting the device
+- Prometheus ready /metrics Endpoint
+- Enable Disable Authentification from Webgui (basic auth & token based auth)
 
 
 ## Setup D1 mini ##
@@ -105,13 +107,19 @@ When no connection to the Node come up:
 
 ## Add Targets to Prometheus ##
 
-Just add your device as a Target to your `prometheus.yml` File. I've using here a Network which searchdomain `speedport.ip`, just change to your Network or use IPs instead of DNS Names.
+Just add your device as a Target to your `prometheus.yml` File. I've using here a Network which searchdomain `speedport.ip`, just change to your Network or use IPs instead of DNS Names. Here is an Example job:
 
 ```yaml
 ...
   - job_name: 'esps'
-    scrape_interval: 5m
-    scrape_timeout: 1m
+#    metrics_path: '/metrics'
+#    scrape_interval: 5m
+#    scrape_timeout: 1m
+#    basic_auth:
+#      username: 'XXXXX'
+#      password: 'XXXXX'
+#    params:
+#      apikey: ['XXXXXXXXXX']
     static_configs:
       - targets: ['esp01.speedport.ip:80'],
       - targets: ['esp02.speedport.ip:80'],
@@ -130,23 +138,23 @@ I've created some Dashboards, maybe there helpfull when begin to build some own 
 ## Screenshots ##
 
 The Webinterface:  
-![webinterface](https://github.com/vaddi/d1mini_node/blob/master/assets/images/webinterface.png "Webinterface")  
+![webinterface](https://github.com/vaddi/d1mini_node/blob/master/assets/images/webinterface.png "Webinterface" | width=200)  
 Screenshot from the Setuppage. here you can configure you Device.
 
 ESP Full Dashboard:  
-![dashboard_full](https://github.com/vaddi/d1mini_node/blob/master/assets/images/dashboard_full.png "Dashboard Full")  
+![dashboard_full](https://github.com/vaddi/d1mini_node/blob/master/assets/images/dashboard_full.png "Dashboard Full" | width=200)  
 A Dashboard witch has all Metrics available. So you have to just enable a Sensor on your ESP Device to see the Sensordata. The Sensors present will get their Value by they're scrape time.
 
 A Dashboard Example:  
-![dashboard_example](https://github.com/vaddi/d1mini_node/blob/master/assets/images/dashboard_example.png "Dashboard Example")  
+![dashboard_example](https://github.com/vaddi/d1mini_node/blob/master/assets/images/dashboard_example.png "Dashboard Example" | width=200)  
 A Dashboard wich combines some Metrics to get a complete Overview over you flat or other Places. Just place some Sensors and feel free to combine or calc average from them.
 
 Devices and Cases:
-![devices](https://github.com/vaddi/d1mini_node/blob/master/assets/images/devices.png "Devices")  
+![devices](https://github.com/vaddi/d1mini_node/blob/master/assets/images/devices.png "Devices" | width=200)  
 Some Basic Devices, only Temperature, Humidity and with the bme280 Sensor also Pressure. Beside the printed Cases (see [links](https://github.com/vaddi/d1mini_node#links) below).
 
 Bathroom Device:
-![devices](https://github.com/vaddi/d1mini_node/blob/master/assets/images/devices_bathroom.png "Bathroom Device")  
+![devices](https://github.com/vaddi/d1mini_node/blob/master/assets/images/devices_bathroom.png "Bathroom Device" | width=200)  
 A Node which get Metrics from my Bathroom. Here also with a printed case and a MQ135 behind.
 
 There are some More, just take a look into the [assets/images](https://github.com/vaddi/d1mini_node/blob/master/assets/images/) Folder.
@@ -156,9 +164,9 @@ There are some More, just take a look into the [assets/images](https://github.co
 
 Some Ideas which i want to implement in the future.
 
-- Basic Auth & API-Token based Authentification for the Metrics
-- Better parsing of the Geigercounter Data
 - Parsing more values from mcp to flatten the output Data
+- transport layer security (tls) support to use https
+- Two Pins left for more Sensors or other Stuff
 
 
 ## Links ##

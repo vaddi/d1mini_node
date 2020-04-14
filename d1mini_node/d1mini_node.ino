@@ -10,6 +10,9 @@
   - OneWire Library ( search for "onewire")
   - DallasTemperature Library (search for "dallas")
 
+  You need to define the right paket sources to have the right boards under Tools!
+  Arduino -> Settings -> Additional Boards Manager URLs: http://arduino.esp8266.com/stable/package_esp8266com_index.json
+
   #
   ## Pin Wiring (left = Sensor pins, right = D1 Mini pins)
   #
@@ -18,8 +21,8 @@
   -----------------
   VIN     | 5V
   GND     | GND
-  SCL     | Pin 5 *
-  SDA     | Pin 4 *
+  SCL     | Pin 5/D1 *
+  SDA     | Pin 4/D2 *
   * i2c
 
   MQ135   | D1 Mini (Analog in Pin)
@@ -45,8 +48,8 @@
   Geigercounter | D1 Mini (Serial)
   -----------------------
   6 green
-  5 yellow      | 3
-  4 orange      | 1
+  5 yellow      | 3/RX
+  4 orange      | 1/TX
   3 red         | 3,3V
   2 brown
   1 black       | GND
@@ -99,6 +102,14 @@
 
   Shild Size: 8 x 10 Platine
   Shild Layout: comming soon
+
+  # Using curl to ensure auth functionality:
+  curl -H "Authorization: Basic XXXXXXXXXX" -X GET http://esp00.local.ip/metrics  // only basic auth
+  curl -X GET http://esp00.local.ip/metrics?apikey=XXXXX  // only token auth
+  curl -H "Authorization: Basic XXXXXXXXXX" -X GET http://esp00.local.ip/metrics?apikey=XXXXX  // basic auth & apikey
+  # to get the Authorization String, open a browser and in them a developer console. Now open the Device page and Login. 
+  Under Networks you can see all requests. Click on the last request end take a look into the headers. 
+  Search for "Authorization: Basic XXXX" and copy the whole String.
   
 */
 
@@ -114,22 +125,14 @@
 //
 // Pin Setup
 //
-
-
-// MQ135 Pin
-#define mqpin A0 // MQ Analog Signal Pin
-
-// Geigerceounter serial pins
-#define gcrx 3  // RX Pin
-#define gctx 1  // TX Pin 
-
-// Declare a OneWire Pin
-#define ONE_WIRE_BUS D3          // Check for D3 Pin or similary OneWire pins
-#define TEMPERATURE_PRECISION 10 // Define precision 9, 10, 11, 12 bit (9=0,5, 10=0,25, 11=0,125)
-
-// MCP3008 ADC
-const uint8_t CS = D8; // CS Pin, other go over SPI (MOSI_PIN = D7, MISO_PIN = D6, CLOCK_PIN = D5)
-
+const byte gcrx     = 3;  // Geigerceounter RX Pin 
+const byte gctx     = 1;  // Geigerceounter TX Pin
+const byte mqpin    = A0; // MQ135 Sensor (Analog)
+const byte mcppin   = D8; // MCP3008 ADC (D7,D6,D5 will also be used for SPI but doesnt neet do defined)
+// DS18B20 Sensorpin & Precision
+const byte onewire  = D3; // OneWire Pin for ds18b20 Sensors
+const byte ds18pre  = 10; // Define precision in bit: 9, 10, 11, 12. Will result in 9=0,5°C, 10=0,25°C, 11=0,125°C 
+                          // (keep in mind: higher values will remain in longer read times!)
 
 
 //
@@ -139,22 +142,21 @@ const uint8_t CS = D8; // CS Pin, other go over SPI (MOSI_PIN = D7, MISO_PIN = D
 // setup your default wifi ssid, passwd and dns stuff. Can overwriten also later from setup website
 const int eepromStringSize      = 24;     // maximal byte size for strings (ssid, wifi-password, dnsname)
 
-char ssid[eepromStringSize]     = ""; // wifi SSID name
+char ssid[eepromStringSize]     = "";     // wifi SSID name
 char password[eepromStringSize] = "";     // wifi wpa2 password
-char dnsname[eepromStringSize]  = "esp"; // Uniq Networkname
+char dnsname[eepromStringSize]  = "esp";  // Uniq Networkname
 char place[eepromStringSize]    = "";     // Place of the Device
 int  port                       = 80;     // Webserver port (default 80)
 bool silent                     = false;  // enable/disable silent mode
-bool debug                      = true;   // enable/disable silent mode
-
-bool gcsensor                   = false;   // enable/disable mightyohm geigercounter (unplug to flash!)
-bool mq135sensor                = false;   // enable/disable mq-sensor. They use Pin A0 and will disable the accurate vcc messuring
-bool bme280sensor               = false;   // enable/disable bme280 (on address 0x76). They use Pin 5 (SCL) and Pin 4 (SDA) for i2c
-bool ds18b20sensor              = false;   // enable/disable ds18b20 temperatur sensors. They use Pin D3 as default for OneWire
+bool debug                      = true;   // enable/disable debug mode (should be enabled on first boot)
+bool gcsensor                   = false;  // enable/disable mightyohm geigercounter (unplug to flash!)
+bool mq135sensor                = false;  // enable/disable mq-sensor. They use Pin A0 and will disable the accurate vcc messuring
+bool bme280sensor               = false;  // enable/disable bme280 (on address 0x76). They use Pin 5 (SCL) and Pin 4 (SDA) for i2c
+bool ds18b20sensor              = false;  // enable/disable ds18b20 temperatur sensors. They use Pin D3 as default for OneWire
 bool mcp3008sensor              = false;  // enable/disable mcp3008 ADC. Used Pins Clock D5, MISO D6, MOSI D7, CS D8
 int  mcpchannels                = 0;      // Amount of visible MCP 300X Channels, MCP3008 = max 8, MCP3004 = max 4
 
-const char* history             = "3.1";  // Software Version
+const char* history             = "4.0";  // Software Version
 String      webString           = "";     // String to display
 String      ip                  = "127.0.0.1";  // default ip, will overwriten
 const int   eepromAddr          = 0;      // default eeprom Address
@@ -162,28 +164,37 @@ const int   eepromSize          = 512;    // default eeprom size in kB (see data
 const int   eepromchk           = 48;     // byte buffer for checksum
 char        lastcheck[ eepromchk ] = "";  // last created checksum
 int         configSize          = 0;
-
-unsigned long previousMillis = 0;         // flashing led timer value
-bool SoftAccOK    = false;                // value for captvie portal function 
-bool captiveCall  = false;                // value to ensure we have a captive request
+String      currentRequest      = "";
+unsigned long previousMillis    = 0;      // flashing led timer value
+bool SoftAccOK                  = false;  // value for captvie portal function 
+bool captiveCall                = false;  // value to ensure we have a captive request
 
 // basic auth 
 bool authentication             = false;  // enable/disable Basic Authentication
 char authuser[eepromStringSize] = "";     // user name
 char authpass[eepromStringSize] = "";     // user password
 
+// token auth
+bool tokenauth                    = false;// enable/disable Tokenbased Authentication
+char token[eepromStringSize]      = "";   // The token variable
+
+// Secpush
+bool secpush                    = false;  // enable/disable secpush (turn off auth after boot for n seconds)
+int  secpushtime                = 300;    // default secpush time in Seconds
+bool secpushstate               = false;  // current secpush state (false after event has trigger)
+
+// Static IP
 bool staticIP = false;                    // use Static IP
 IPAddress ipaddr(192, 168, 1, 250);       // Device IP Adress
 IPAddress gateway(192, 168, 1, 1);        // Gateway IP Adress
 IPAddress subnet(255, 255, 255, 0);       // Network/Subnet Mask
 IPAddress dns1(192, 168, 1, 1);           // First DNS
 IPAddress dns2(4, 4, 8, 8);               // Second DNS
-String dnssearch;               // DNS Search Domain
+String dnssearch;                         // DNS Search Domain
 
 // DNS server
 const byte DNS_PORT = 53;
 DNSServer dnsServer;
-
 
 
 //
@@ -208,69 +219,124 @@ String gcraw           = "";
 String gcmode          = "";
 int gcsize             = 0;
 int gcerror            = 0;
-// Helper function to find string in string
+int prc                = 0; // Parsing Counter
+int src                = 0; // Serial Read Counter
+String errorcodes[]    = { "no error", "empty serial data", "serial in use", "non numerical", "flipped values", "serial not available" };
+boolean isNumber( String tString ) {
+  String tBuf;
+  boolean decPt = false;
+  if( tString.charAt( 0 ) == '+' || tString.charAt( 0 ) == '-' ) tBuf = &tString[1];
+  else tBuf = tString; 
+  for( int x = 0; x < tBuf.length(); x++ ) {
+    if( tBuf.charAt( x ) == '.' ) {
+      if( decPt ) return false;
+      else decPt = true; 
+    }   
+    else if( tBuf.charAt( x ) < '0' || tBuf.charAt( x ) > '9' ) return false;
+  }
+  return true;
+}
 // read serial data
 String readGCSerial() {
   //char dataBuffer[64];
   String data;
   if( mySerial.available() ) {
+    delay(3); // time to fill buffer!
     //mySerial.readBytesUntil( '\n', dataBuffer, 64 );
     //data = dataBuffer;
     return mySerial.readStringUntil('\n');
+    //return mySerial.read();
+  } else {
+    gcerror = 5; // serial not available
   }
   return "";
 }
-// realy bad serial data parser :/
+// realy bad serial data parser
 void parseGCData() {
   String data = "";
-  int parserCounter = 0;
-  if( ! debug ) { // ensure, serial is not in use!
+  src = 0;
+  if( debug ) { // ensure, serial is not in use!
+    gcerror = 2; // serial in use
+  } else {
     while( data == "" ) {
-      parserCounter += 1;
-      if( parserCounter > 100 ) { 
-        gcerror = 1;
+      src += 1;
+      if( src > 2000 ) { // max read time in milli seconds
+        gcerror = 1; // empty serial data
         break; 
       }
       data = readGCSerial();
-      delay( 50 );
+      //delay( 1 );
+    }
+  }
+  if( data != "" ) {
+    int commaLocations[6];
+    commaLocations[0] = data.indexOf(',');
+    commaLocations[1] = data.indexOf(',',commaLocations[0] + 1);
+    commaLocations[2] = data.indexOf(',',commaLocations[1] + 1);
+    commaLocations[3] = data.indexOf(',',commaLocations[2] + 1);
+    if( data.length() > 57 ) {
+      commaLocations[4] = data.indexOf(',',41 + 1);
+      commaLocations[5] = data.indexOf(',',49 + 1);
+    } else {
+      commaLocations[4] = data.indexOf(',',commaLocations[3] + 1);
+      commaLocations[5] = data.indexOf(',',commaLocations[4] + 1);
+    }  
+    cps = data.substring(commaLocations[0] + 2,commaLocations[1]);
+    cpm = data.substring(commaLocations[2] + 2, commaLocations[3]);
+    uSvh = data.substring(commaLocations[4] + 2, commaLocations[5]);
+    gcsize = data.length();
+    gcmode = data.substring(commaLocations[5] + 2, commaLocations[5] + 3);
+    gcraw = data;
+  }
+}
+void readGC() {
+  prc = 0;
+  parseGCData();
+  while( ! isNumber( cps ) || ! isNumber( cpm ) || ! isNumber( uSvh ) ) {
+    if( prc > 100 ) break;
+    parseGCData();
+    prc += 1;
+    //delay(1);
+  }
+  // validate the final result
+  if( ! isNumber( cps ) || ! isNumber( cpm ) || ! isNumber( uSvh ) ) {
+    if( cps > cpm ) {
+      gcerror = 4; // flipped values
+      String tmpCps = cps;
+      cps = cpm;
+      cpm = tmpCps;
+    } else {
+      gcerror = 3; // non numerical values
+      cps = "0.0";
+      cpm = "0.0";
+      uSvh = "0.0";
     }
   } else {
-    gcerror = 2;
+    gcerror = 0; // reset error
   }
-  int commaLocations[6];
-  commaLocations[0] = data.indexOf(',');
-  commaLocations[1] = data.indexOf(',',commaLocations[0] + 1);
-  commaLocations[2] = data.indexOf(',',commaLocations[1] + 1);
-  commaLocations[3] = data.indexOf(',',commaLocations[2] + 1);
-  if( data.length() > 57 ) {
-    commaLocations[4] = data.indexOf(',',41 + 1);
-    commaLocations[5] = data.indexOf(',',49 + 1);
-  } else {
-    commaLocations[4] = data.indexOf(',',commaLocations[3] + 1);
-    commaLocations[5] = data.indexOf(',',commaLocations[4] + 1);
-  }  
-  cps = data.substring(commaLocations[0] + 2,commaLocations[1]);
-  cpm = data.substring(commaLocations[2] + 2, commaLocations[3]);
-  uSvh = data.substring(commaLocations[4] + 2, commaLocations[5]);
-  gcsize = data.length();
-  gcmode = data.substring(commaLocations[5] + 2, commaLocations[5] + 3);
-  gcraw = data;
 }
 // Get formatet Geigercounterdata function
 String getGCData() {
   unsigned long currentMillis = millis();
-  parseGCData();
+  readGC();
   long GCRuntime = millis() - currentMillis;
   String result = "";
   result += "# HELP esp_mogc_info Geigercounter current read mode\n";
   result += "# TYPE esp_mogc_info gauge\n";
   result += "esp_mogc_info{";
   result += "mode=\"" + gcmode + "\"";
-  result += ", size=\"" + String( gcsize ) + "\"";
+//  result += ", size=\"" + String( gcsize ) + "\"";
   gcraw = gcraw.substring( 0, gcraw.length() -1 );
   result += ", raw=\"" + String( gcraw ) + "\"";
-  result += ", error=\"" + String( gcerror ) + "\"";
   result += "} 1\n";
+  result += "# HELP esp_mogc_error Geigercounter error code\n";
+  result += "# TYPE esp_mogc_error gauge\n";
+  result += "esp_mogc_error{";
+  result += "errorString=\"" + errorcodes[gcerror] + "\"";
+  result += "} " + String( gcerror ) + "\n";
+  result += "# HELP esp_mogc_size String length of raw serial data\n";
+  result += "# TYPE esp_mogc_size gauge\n";
+  result += "esp_mogc_size " + String( gcsize ) + "\n";
   result += "# HELP esp_mogc_cps Geigercounter Counts per Second\n";
   result += "# TYPE esp_mogc_cps gauge\n";
   result += "esp_mogc_cps " + cps + "\n";
@@ -280,6 +346,12 @@ String getGCData() {
   result += "# HELP esp_mogc_usvh Geigercounter Micro Sivert per Hour\n";
   result += "# TYPE esp_mogc_usvh gauge\n";
   result += "esp_mogc_usvh " + uSvh + "\n";
+  result += "# HELP esp_mogc_src Geigercounter Serial read counts. Amount of reads until data is not empty\n";
+  result += "# TYPE esp_mogc_src gauge\n";
+  result += "esp_mogc_src " + String( src ) + "\n";
+  result += "# HELP esp_mogc_prc Geigercounter Parsing counts. Amount of parsing runs until data is numerical\n";
+  result += "# TYPE esp_mogc_prc gauge\n";
+  result += "esp_mogc_prc " + String( prc ) + "\n";
   result += "# HELP esp_mogc_runtime Time in milliseconds to read Geigercounter Values\n";
   result += "# TYPE esp_mogc_runtime gauge\n";
   result += "esp_mogc_runtime " + String( GCRuntime ) + "\n";
@@ -292,7 +364,7 @@ String getGCData() {
 #include <OneWire.h>
 #include <DallasTemperature.h>
 // Declare OneWire Bus
-OneWire oneWire(ONE_WIRE_BUS);
+OneWire oneWire(onewire);
 // Declare ds18b20 Sensor on OneWire Bus
 DallasTemperature DS18B20(&oneWire);
 DeviceAddress tempAdd[0];                     // DS18B20 Address Array
@@ -377,11 +449,11 @@ String getBME280Data() {
 #include <SPI.h>
 uint16_t channelData[8];
 uint16_t mcp3008_read(uint8_t channel) {
-  digitalWrite(CS, LOW);
+  digitalWrite(mcppin, LOW);
   SPI.transfer(0x01);
   uint8_t msb = SPI.transfer(0x80 + (channel << 4));
   uint8_t lsb = SPI.transfer(0x00);
-  digitalWrite(CS, HIGH);
+  digitalWrite(mcppin, HIGH);
   return ((msb & 0x03) << 8) + lsb;
 }
 void readMCPData() {
@@ -519,83 +591,41 @@ ESP8266WebServer server( port );
 //
 
 // http response handler
-void response( String data, String requesttype ) {
-  if( !silent ) {
-    digitalWrite(LED_BUILTIN, LOW);
-  }
-  server.send(200, requesttype, data);
-  delay(100);
-  if( !silent ) {
-    digitalWrite(LED_BUILTIN, HIGH);
-  }
-  if( dnssearch.length() == 0 && ! isIp( server.hostHeader() ) ) { // only if not in AP Mode  ! SoftAccOK &&
-    String fqdn = server.hostHeader(); // esp22.speedport.ip
-    int hostnameLength = String( dnsname ).length() + 1;
-    dnssearch = fqdn.substring( hostnameLength );
-  }
-}
-
-// flashing led
-// flashing( LED_BUILTIN, 300, 500);
-void flashing( int led, int tOn, int tOff ) {
-  static int timer = tOn;
-  if( millis() - previousMillis >= timer ) {
-    if( digitalRead( led ) == HIGH ) {
-      timer = tOff;
-    } else {
-      timer = tOn;
+void response( String& data, String requesttype ) { // , String addHeaders 
+  if( ! silent ) digitalWrite( LED_BUILTIN, LOW );
+  // get the pure dns name from requests
+  if( dnssearch.length() == 0 ) { // only if not in AP Mode  ! SoftAccOK &&
+    if( ! isIp( server.hostHeader() ) ) {
+      String fqdn = server.hostHeader(); // esp22.speedport.ip
+      int hostnameLength = String( dnsname ).length() + 1; // 
+      fqdn = fqdn.substring( hostnameLength );
+      String tmpPort = ":" + String( port );
+      fqdn.replace( tmpPort, "" );
+      dnssearch = fqdn;
     }
-    digitalWrite( led, ! digitalRead( led ) );
-    previousMillis = millis();
-  } 
+  }
+//  if( addHeaders != null || addHeaders != "" ) {
+//    server.sendHeader("Referrer-Policy","origin"); // Set aditional header data
+//    server.sendHeader("Access-Control-Allow-Origin", "*"); // allow 
+      server.sendHeader("Fishi", "Bread"); // allow 
+//  }
+  server.send( 200, requesttype, data );
+  delay(300);
+  if( ! silent ) digitalWrite( LED_BUILTIN, HIGH );
 }
 
 // debug output to serial
 void debugOut( String caller ) {
+//  String callerUpper = caller;
+//  callerUpper.toUpperCase();
+//  char callerFirst = callerUpper.charAt(0);
+//  caller = String( callerFirst ) + caller.substring(1,-1);
   if( debug ) {
-    Serial.print( "* Request (" );
-    Serial.print( caller );
-    Serial.print( "): " );
+    Serial.println( " " ); // Add newline
+    Serial.print( "* " );
+    Serial.print( server.client().remoteIP() );
+    Serial.print( " requesting " );
     Serial.println( server.uri() );
-    if( SoftAccOK ) {
-      Serial.print( "  Remote IP: " );
-      Serial.println( server.client().remoteIP() ); // Connected Client IP
-      Serial.print( "  Local IP: " );
-      Serial.println( ip ); // Device (Server) IP
-    } else {
-      Serial.print( "  Remote IP: " );
-      Serial.println( server.client().remoteIP() ); // Connected Client IP
-      Serial.print( "  Local IP: " );
-      Serial.println( server.client().localIP() ); // Device (Server) IP
-    }
-//    Serial.print( "  Warning: " );
-//    Serial.println( server.header("Warning") );
-//    Serial.print( "  Range: " );
-//    Serial.println( server.header("Range") );
-//    Serial.print( "  Pragma: " );
-//    Serial.println( server.header("Pragma") );
-//    Serial.print( "  Cache-Control: " );
-//    Serial.println( server.header("Cache-Control") );
-//    Serial.print( "  Connection: " );
-//    Serial.println( server.header("Connection") );
-//    Serial.print( "  Forwarded: " );
-//    Serial.println( server.header("Forwarded") );
-    Serial.print( "  Host Header: " );
-    Serial.println( server.hostHeader() );
-//    Serial.print( "  Host Setup: " );
-//    Serial.println( ( String( dnsname ) + "." + String( dnssearch ) ) );
-//    Serial.print( "  DNS Search Length: " );
-//    Serial.println( dnssearch.length() );
-//    Serial.print( "  Referer: " );
-//    Serial.println( server.header("Referer") );
-//    Serial.print( "  Accept: " );
-//    Serial.println( server.header("Accept") );
-//    Serial.print( "  UA String: " );
-//    Serial.println( server.header("User-Agent") );
-//    Serial.print( "  Captive Mode: " );
-//    Serial.println( (int) SoftAccOK );
-//    Serial.print( "  Captive Call: " );
-//    Serial.println( (int) captiveCall );
     if( SoftAccOK ) {
       Serial.print( "  Connected Wifi Clients: " );
       Serial.println( (int) WiFi.softAPgetStationNum() );
@@ -606,6 +636,7 @@ void debugOut( String caller ) {
 
 // load config from eeprom
 bool loadSettings() {
+  if( debug ) Serial.println( "- Functioncall loadSettings()" );
   // define local data structure
   struct { 
     char eepromssid[ eepromStringSize ];
@@ -622,6 +653,10 @@ bool loadSettings() {
     bool eepromauthentication = false;
     char eepromauthuser[eepromStringSize];
     char eepromauthpass[eepromStringSize];
+    bool eepromtokenauth = false;
+    char eepromtoken[eepromStringSize];
+    bool eepromsecpush        = false;
+    int  eepromsecpushtime    = 0;
     int  eeprommcpchannels    = 0;
     bool eepromsilent         = false;
     bool eepromgcsensor       = false;
@@ -635,14 +670,17 @@ bool loadSettings() {
   EEPROM.get( eepromAddr, data );
   // validate checksum
   String checksumString = sha1( String( data.eepromssid ) + String( data.eeprompassword ) + String( data.eepromdnsname ) + String( data.eepromplace ) 
-        + String( (int) data.eepromauthentication ) + String( data.eepromauthuser )  + String( data.eepromauthpass )
-        + String( data.eeprommcpchannels ) + String( (int) data.eepromsilent )  + String( (int) data.eepromgcsensor ) + String( (int) data.eeprommq135sensor ) 
+        + String( (int) data.eepromauthentication ) + String( data.eepromauthuser ) + String( data.eepromauthpass ) 
+        + String( (int) data.eepromtokenauth ) + String( data.eepromtoken ) 
+        + String( (int) data.eepromsecpush ) + String( data.eepromsecpushtime ) 
+        + String( data.eeprommcpchannels ) + String( (int) data.eepromsilent ) + String( (int) data.eepromgcsensor ) + String( (int) data.eeprommq135sensor ) 
         + String( (int) data.eeprombme280sensor ) + String( (int) data.eepromds18b20sensor ) + String( (int) data.eeprommcp3008sensor ) + String( (int) data.eepromdebug ) 
         + String( (int) data.eepromstaticIP ) + ip2Str( data.eepromipaddr ) + ip2Str( data.eepromgateway ) + ip2Str( data.eepromsubnet ) + ip2Str( data.eepromdns1 ) + ip2Str( data.eepromdns2 ) 
         );
   char checksum[ eepromchk ];
   checksumString.toCharArray(checksum, eepromchk); // write checksumString into checksum
   if( strcmp( checksum, data.eepromchecksum ) == 0 ) { // compare with eeprom checksum
+    if( debug ) Serial.println( "  passed checksum validation" );
     strncpy( lastcheck, checksum, eepromchk );
     configSize = sizeof( data );
     // re-set runtime variables;
@@ -661,6 +699,10 @@ bool loadSettings() {
     authentication = data.eepromauthentication;
     strncpy( authuser, data.eepromauthuser, eepromStringSize );
     strncpy( authpass, data.eepromauthpass, eepromStringSize );
+    tokenauth = data.eepromtokenauth;
+    strncpy( token, data.eepromtoken, eepromStringSize );
+    secpush = data.eepromsecpush;
+    secpushtime = data.eepromsecpushtime;
     mcpchannels = data.eeprommcpchannels;
     silent = data.eepromsilent;
     gcsensor = data.eepromgcsensor;
@@ -670,11 +712,13 @@ bool loadSettings() {
     mcp3008sensor = data.eeprommcp3008sensor;
     return true;
   }
+  if( debug ) Serial.println( "  failed checksum validation" );
   return false;
 }
 
 // write config to eeprom
 bool saveSettings() {
+  if( debug ) Serial.println( "- Functioncall saveSettings()" );
   // define local data structure
   struct { 
     char eepromssid[ eepromStringSize ];
@@ -691,6 +735,10 @@ bool saveSettings() {
     bool eepromauthentication = false;
     char eepromauthuser[eepromStringSize];
     char eepromauthpass[eepromStringSize];
+    bool eepromtokenauth = false;
+    char eepromtoken[eepromStringSize];
+    bool eepromsecpush        = false;
+    int  eepromsecpushtime    = 0;
     int  eeprommcpchannels    = 0;
     bool eepromsilent         = false;
     bool eepromgcsensor       = false;
@@ -715,6 +763,10 @@ bool saveSettings() {
   data.eepromauthentication = authentication;
   strncpy( data.eepromauthuser, authuser, eepromStringSize );
   strncpy( data.eepromauthpass, authpass, eepromStringSize );
+  data.eepromtokenauth = tokenauth;
+  strncpy( data.eepromtoken, token, eepromStringSize );
+  data.eepromsecpush = secpush;
+  data.eepromsecpushtime = secpushtime;
   data.eeprommcpchannels = mcpchannels;
   data.eepromsilent = silent;
   data.eepromgcsensor = gcsensor;
@@ -724,7 +776,9 @@ bool saveSettings() {
   data.eeprommcp3008sensor = mcp3008sensor;
   // create new checksum
   String checksumString = sha1( String( data.eepromssid ) + String( data.eeprompassword ) + String( data.eepromdnsname ) + String( data.eepromplace ) 
-        + String( (int) data.eepromauthentication ) + String( data.eepromauthuser )  + String( data.eepromauthpass )
+        + String( (int) data.eepromauthentication ) + String( data.eepromauthuser )  + String( data.eepromauthpass ) 
+        + String( (int) data.eepromtokenauth ) + String( data.eepromtoken ) 
+        + String( (int) data.eepromsecpush ) + String( data.eepromsecpushtime ) 
         + String( data.eeprommcpchannels ) + String( (int) data.eepromsilent )  + String( (int) data.eepromgcsensor ) + String( (int) data.eeprommq135sensor ) 
         + String( (int) data.eeprombme280sensor ) + String( (int) data.eepromds18b20sensor ) + String( (int) data.eeprommcp3008sensor ) + String( (int) data.eepromdebug ) 
         + String( (int) data.eepromstaticIP ) + ip2Str( data.eepromipaddr ) + ip2Str( data.eepromgateway ) + ip2Str( data.eepromsubnet ) + ip2Str( data.eepromdns1 ) + ip2Str( data.eepromdns2 ) 
@@ -733,13 +787,20 @@ bool saveSettings() {
   checksumString.toCharArray(checksum, eepromchk);
   strncpy( data.eepromchecksum, checksum, eepromchk );
   strncpy( lastcheck, checksum, eepromchk );
+  if( debug ) { Serial.print( "  create new config checksum: " ); Serial.println( checksum ); }
   configSize = sizeof( data );
   // save struct into eeprom
   EEPROM.put( eepromAddr,data );
   // commit transaction and return the write result state
-  return EEPROM.commit();
+  bool eepromCommit = EEPROM.commit();
+  if( eepromCommit ) {
+    if( debug ) Serial.println( "  successfully write config to eeprom" );
+  } else {
+    if( debug ) Serial.println( "  failed to write config to eeprom" );
+  }
+  return eepromCommit;
 }
-
+  
 // is String an ip?
 bool isIp(String str) {
   for (size_t i = 0; i < str.length(); i++) {
@@ -775,6 +836,93 @@ void parseBytes( const char* str, char sep, byte* bytes, int maxBytes, int base 
   }
 }
 
+// Disable Authenthification after booting for X seconds
+bool securePush() {
+  if( secpush && secpushstate ) {
+    int tmpPushtime = ( secpushtime * 1000 );
+    //if( secpushstate && ( millis() - tmpPushtime > tmpPushtime ) ) {
+    if( ( (int) secpushtime - ( ( millis() - secpushtime ) / 60 /60 ) ) <= 3 ) {
+      secpushstate = false;
+      return false;
+    }
+  }
+  return true;
+}
+
+
+bool validToken( String requestToken ) {
+  bool result = false;
+  if( requestToken == token ) {
+    result = true;
+  }
+  return result;
+}
+
+void authorisationHandler() {
+  if( ! SoftAccOK ) { // disable validation in AP Mode
+    if( ! secpushstate ) { // disable validation when Secpush state is active
+      if( authentication || tokenauth ) { // only if authentifications are enabled
+        bool authenticated = false;
+        // basic auth (on all pages)
+        if( authentication ) {
+          bool authenticateUser = server.authenticate( authuser, authpass );
+          if( ! authenticateUser ) {
+            if( debug ) Serial.println( "  basic auth - request username & password" );
+            return server.requestAuthentication();
+          } else {
+            if( debug ) Serial.println( "  basic auth - validation passed." );
+            authenticated = true;
+          }
+        }
+        // token auth (only on Special pages)
+        if( currentRequest == "metrics" || currentRequest == "restart" || currentRequest == "reset" ) { // token auth only on sepecial pages
+          if( tokenauth && ! authenticated ) { // disable, if user authenticated allready by basic auth
+            if( server.hasHeader( "X-Api-Key" ) ) {
+              String apikey = server.header( "X-Api-Key" );
+              if( apikey == "" ) {
+                if( debug ) Serial.println( "  tokenauth - empty X-Api-Key, validation failed. Send 401." );
+                return server.send(401, "text/plain", "401: Unauthorized, empty X-Api-Key.");
+              }
+              if( debug ) { Serial.print( "  tokenauth - got X-Api-Key (header): " ); Serial.println( apikey ); }
+              if( validToken( apikey ) ) {
+                if( debug ) Serial.println( "  tokenauth - validation passed" );
+                authenticated = true;
+              } else {
+                if( debug ) Serial.println( "  tokenauth - invalid X-Api-Key, validation failed" );
+                return server.send(401, "text/plain", "401: Unauthorized, wrong X-Api-Key. Send 401.");
+              }
+            } else if( server.arg( "apikey" ) ) {
+              String apikey = server.arg( "apikey" );
+              if( apikey == "" ) {
+                if( debug ) Serial.println( "  tokenauth - empty apikey, validation failed. Send 401." );
+                return server.send(401, "text/plain", "401: Unauthorized, empty apikey.");
+              }
+              if( debug ) { Serial.print( "  tokenauth - got apikey (arg): " ); Serial.println( apikey ); }
+              if( validToken( apikey ) ) {
+                if( debug ) Serial.println( "  tokenauth - validation passed." );
+                authenticated = true;
+              } else {
+                if( debug ) Serial.println( "  tokenauth - invalid apikey, validation failed. Send 401." );
+                return server.send(401, "text/plain", "401: Unauthorized, wrong apikey.");
+              }
+            } else {
+              if( debug ) Serial.println( "  tokenauth - apikey or  X-Api-Key missing in request. Send 401." );
+              return server.send(401, "text/plain", "401: Unauthorized, X-Api-Key or apikey missing.");
+            }
+          }
+        } else { // currentRequested page dont use token auth
+          if( debug ) { Serial.print( "  tokenauth - disabled uri: " ); Serial.println( currentRequest ); }
+        }
+      } else {
+        if( debug ) Serial.println( "  authorisation disabled" );
+      }
+    } else { // secpush
+      if( debug ) Serial.println( "  authorisation disabled by SecPush" );
+    }
+  } else { // softACC
+    if( debug ) Serial.println( "  authorisation disabled in AP Mode" );
+  }
+}
 
 
 //
@@ -783,7 +931,8 @@ void parseBytes( const char* str, char sep, byte* bytes, int maxBytes, int base 
 
 // spinner javascript
 String spinnerJS() {
-  String result = "";
+  String result( ( char * ) 0 );
+  result.reserve( 440 );
   result += "<script type='text/javascript'>\n";
   result += "var duration = 300,\n";
   result += "    element,\n";
@@ -805,7 +954,8 @@ String spinnerJS() {
 
 // spinner css
 String spinnerCSS() {
-  String result = "";
+  String result( ( char * ) 0 );
+  result.reserve( 120 );
   result += "<style>\n";
   result += "#spinner_wrap {\n";
   result += "  margin-top: 25%;\n";
@@ -821,8 +971,8 @@ String spinnerCSS() {
 
 // global javascript
 String htmlJS() {
-  String result = "";
-  result += "<script type='text/javascript'>\n";
+  String result( ( char * ) 0 );
+  result.reserve( 2750 );
   // javascript to poll wifi signal
   if( ! captiveCall ) { // deactivate if in setup mode (Captive Portal enabled)
     result += "window.setInterval( function() {\n"; // polling event to get wifi signal strength
@@ -834,9 +984,12 @@ String htmlJS() {
     result += "  signal.innerText = signalValue + ' dBm';\n";
     result += "}, 5000 );\n";
   }
-  result += "if( window.location.pathname == '/setup' ) {\n"; // load only on setup page
+  result += "let currentUrl = window.location.pathname;\n";
+  result += "if( currentUrl == '/device' || currentUrl == '/network' || currentUrl == '/auth' ) {\n"; // load this only on setup page!
   result += "  function renderRows( checkbox, classname ) {\n";
+  result += "    if( checkbox === null || checkbox === undefined || checkbox === \"\" || classname === null || classname === undefined || classname === \"\" ) return;\n";
   result += "    let rows = document.getElementsByClassName( classname );\n";
+  result += "    if( rows === null || rows === undefined || rows === \"\" ) return;\n";
   result += "    if( checkbox.checked == true ) {\n";
   result += "      for (i = 0; i < rows.length; i++) {\n";
   result += "        rows[i].style.display = 'table-row';\n";
@@ -847,81 +1000,134 @@ String htmlJS() {
   result += "      }\n";
   result += "    }\n";
   result += "  }\n";
+  result += "  function renderGC() {\n"; // en/disable debug, depending on geigercounter en/disabled and vice versa
+  result += "    gcsensorbox = document.getElementById('gcsensor');\n";
+  result += "    debugbox = document.getElementById('debug');\n";
+  result += "    if( gcsensorbox === null || gcsensorbox === undefined || debugbox === null || debugbox === undefined ) return;\n";
+  result += "    if( gcsensorbox.checked ) {\n";
+  result += "      debugbox.disabled = true;\n";
+  result += "      debugbox.checked = false;\n";
+  result += "    } else {\n";
+  result += "      debugbox.disabled = false;\n";
+  result += "    }\n";
+  result += "    if( debugbox.checked ) {\n";
+  result += "      gcsensorbox.disabled = true;\n";
+  result += "      gcsensorbox.checked = false;\n";
+  result += "    } else {\n";
+  result += "      gcsensorbox.disabled = false;\n";
+  result += "    }\n";
+  result += "  }\n";
+  result += "  function createToken( length ) {\n";
+  result += "    var result           = '';\n";
+  result += "    var characters       = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789';\n";
+  result += "    var charactersLength = characters.length;\n";
+  result += "    for ( var i = 0; i < length; i++ ) {\n";
+  result += "      result += characters.charAt(Math.floor(Math.random() * charactersLength));\n";
+  result += "    }\n";
+  result += "    return result;\n";
+  result += "  }\n";
+  result += "  function generateToken( tokenFildId ) {\n";
+  result += "    tokenField = document.getElementById( tokenFildId );\n";
+  result += "    if( tokenField.value == null || tokenField.value == undefined ) return;\n";
+  result += "    if( tokenField.value != \"\" ) {\n";
+  result += "      let confirmed = window.confirm('Reset current Token?')\n"; 
+  result += "      if( confirmed ) tokenField.value = createToken( 16 );\n";
+  result += "    } else {\n";
+  result += "      tokenField.value = createToken( 16 );\n";
+  result += "    }\n";
+  result += "  }\n";
   result += "  window.onload = function () {\n";
-  result += "    renderRows( document.getElementById('authentication'), \"authRow\" );\n";
-  result += "    renderRows( document.getElementById('mcp3008sensor'), \"mcpChannelsRow\" );\n";
-  result += "    renderRows( document.getElementById('staticIP'), \"staticIPRow\" );\n";
+  result += "    renderRows( document.getElementById( 'authentication'), \"authRow\" );\n";
+  result += "    renderRows( document.getElementById( 'tokenauth'), \"tokenAuthRow\" );\n";
+  result += "    renderRows( document.getElementById( 'mcp3008sensor'), \"mcpChannelsRow\" );\n";
+  result += "    renderRows( document.getElementById( 'staticIP'), \"staticIPRow\" );\n";
+  result += "    renderRows( document.getElementById( 'secpush'), \"secPushRow\" );\n";
+  result += "    renderGC();\n";
   result += "  };\n";
   result += "};\n";
-  result += "</script>\n";
   return result;
 }
 
 
 // global css
 String htmlCSS() {
-  String result = "";
-  result += "<style>\n";
-  result += "\n";
-  result += "#signalWrap {\n";
-  result += "  float: right;\n";
-  result += "}\n";
-  result += "#signal {\n";
-  result += "  transition: all 500ms ease-out;\n";
-  result += "}\n";
+  //String result = "";
+  String result( ( char * ) 0 );
+  result.reserve( 700 ); // reseve space for N characters
+  result += "@charset 'UTF-8';\n";
+  result += "#signalWrap { float: right; }\n";
+  result += "#signal { transition: all 500ms ease-out; }\n";
   result += "#mcpChannelsRow, .staticIPRow, .authRow {\n";
   result += "  transition: all 500ms ease-out;\n";
   result += "  display: table-row;\n";
   result += "}\n";
+  result += "#footer { text-align:center; }\n";
+  result += "#footer .right { color: #ccc; float: right; margin-top: 0; }\n";
+  result += "#footer .left { color: #ccc; float: left; margin-top: 0; }\n";
   result += "@media only screen and (max-device-width: 720px) {\n";
   result += "  .links { background: red; }\n";
   result += "  .links tr td { padding-bottom: 15px; }\n";
   result += "  h1 small:before { content: \"\\A\"; white-space: pre; }\n";
   result += "  #signalWrap { margin-top: 15px; }\n";
   result += "  #spinner_wrap { margin-top: 45%; }\n";
-  result += "  #links a { background: #ccc; display: block; width: 100%; min-width: 300px; min-height: 40px; text-align: center; vertical-align: middle; padding-top: 20px; border-radius: 10px; }\n";
+  result += "  #links a { background: #ddd; display: block; width: 100%; min-width: 300px; min-height: 40px; text-align: center; vertical-align: middle; padding-top: 20px; border-radius: 10px; }\n";
+  result += "  #footer .left, #footer .right { float: none; }\n";
+  result += "  #links tr td:nth-child(2n) { display: none; }\n";
   result += "}\n";
-  result += "</style>\n";
   return result;
 }
 
 // html head
-String htmlHead( String title ) {
-  String result = "<head>\n";
-  result += "  <title>" + title + "</title>\n";
-  result += "<meta http-equiv='content-type' content='text/html; charset=UTF-8' />\n";
-  result += "<meta name='viewport' content='width=device-width, minimum-scale=1.0, maximum-scale=1.0' />\n";
-  result += "<link id='favicon' rel='shortcut icon' type='image/png' href='data:image/png;base64,AAABAAEAMDAAAAEAIAAyBQAAFgAAAIlQTkcNChoKAAAADUlIRFIAAAAwAAAAMAgGAAAAVwL5hwAABPlJREFUaIG92WmoVVUUB/Cf+crqpYWmNFFaUmEZaUQFiUVlEUFlAxI2iBVNUIRBQcSiMIogm6GiCRtIGpSygeqDhWKkNlhGFBpGRGrmUGb1rD7s+47X6zn3nXvvef1hce69e+2117p7n3X+ax2qRthTmCAMavi9X9DVDzaPxod4S1iGbXhc+Kkf1jKgMkthHzyNITitYfR5XCn8Wdl6NexSoa1BOMXOzm/Dssz5KGGpjE4NVe7ALngI1zeMbMYMLBK+bJgzHGdgBNZgubC8lWWrDGBPvIlTc0b/xu/YiAX4AIdjOoZi15rOFnyLW4QF2U6EQlQXQFpoGKbiYNzcobXXcI2wtplSdfdAIPwiPIhvKrA4GSuEszL7OahmByKTg/AMJkrHogr8jmOElXmDne1A1F3D2fgOp6vOeejGzKLBqgK4FfNpePpWh9FFA+0HENn1GtzVtp1yuLtooL0AIpPDcJ/+oSQ9+AFThdeLbuJOF34Ue3VooxGbJC41F3OEzeiHLBT2o2OCthUrsBarpAfhJ9gkbK2t0/RB1slNfFQHc+FFjMSXmC9cK8zHmsx5+uRF5QKIXEOTS81N+Dvnt7OwFJdhlnDFDuuVRGtHKEzDDdgPw5XP9/Ml/nN/E50eLBBOb8WlvncgsuvVEt8fjwO09rA6Hi9JPOlHydlGdGFYCzZRNoDENDshZyPwLt7BKFwlny+dna1ZEsVHKHTjCWzAOtxR3mwhVmCCsL6WxZ6SnP5ICu4BbKkqgGH4GIe17W4+XsU0afcH4iS8J/zVjrH8IxQSNU4Z4rd2DOeg99xPxgtSYbMKw4W/2u1aNNuB/bFIKk4aA12MMVIB3xe24gLp5s/jTMuE48o4m4fiHUj//Nc5oz1S7TuhhP0PpX/4LSn75OHOujVbRrMjtLnG8V9uGO3CCcIXeKXA7jY8JkwU2RE8t0D3XmFMX5ShCMVpdLuxm9ipGhpXy1L3Fcxeh9vrbI2VqrR69GA9jsDbwl7tBFDMRiOTNXozUdgDj0gPsX+kCmwlDm2Y3Y0T8Xbt+3opqN7M0y21W46vBbBP3U61hPJUIuy8xaELT1LHY7ZjA2bhYeHXWu0wXHL+YhyDS4RVmf36a0l0Qqd75SLMVlxOrsaNwty6uV1SHbFR+LdtH1TRlQgD8IXU1G2uyUyhp90bNg+dBRCZjJUKkb6K+tmYLnLpdVvovCuRZLnU1O2LDlwqZbXK0HlnLjJZKKXKVX3MuE7Yt+N1a6imtRiZLMY43IM/CrRHShmoElTdGyVsxG1S23xTgfakqpZtxoV2/twXdpy3UHrhkYdDWrDaFM240IXCgLbSXWTyqZSdGlFZC7LZEZqhtc5DEfJq58pe+DULYB3OEwa2vAuRyWgcm6OxsEWLhWgWwAeYQotUNzLZG3NyNLZKdUIlaBbAPImtvi8MLhVEZLKbVPuOy9F6FT/3L5VIxgfhWWkX1uNMLM3IV+yg2/t5VynHz8OBOZbXYpLwWUde16E5FwpjpJbHUOlVz5N4Vvi8Qe8QnCzVvucXWNuCKcIb/y+ZC+OxpE53g/S6dLV0BA/AYKnA363Ayvc4R/iqZvN/CiAyGSW1vo9U/um9TQr0OdyatU6iLT8LUWYHeqUbl+NCqRm1e472JqnEXCI1xeYK63awUzHK1QP1i6dAhkj9zv1rv26RjtQf+BO/iVojq35uP+A/urI6Gkydy9MAAAAASUVORK5CYII=' />\n";
-  result += htmlJS() + "\n";
-  result += htmlCSS() + "\n";
+String htmlHead() {
+  String result( ( char * ) 0 );
+  result.reserve( 5500 );
+  result += "<head>\n";
+  result += "  <title>" + String( dnsname ) + "</title>\n";
+  result += "  <meta http-equiv='content-type' content='text/html; charset=UTF-8'>\n";
+  result += "  <meta name='viewport' content='width=device-width, minimum-scale=1.0, maximum-scale=1.0'>\n";
+  //result += "  <link id='favicon' rel='shortcut icon' type='image/png' href='data:image/png;base64,AAABAAEAMDAAAAEAIAAyBQAAFgAAAIlQTkcNChoKAAAADUlIRFIAAAAwAAAAMAgGAAAAVwL5hwAABPlJREFUaIG92WmoVVUUB/Cf+crqpYWmNFFaUmEZaUQFiUVlEUFlAxI2iBVNUIRBQcSiMIogm6GiCRtIGpSygeqDhWKkNlhGFBpGRGrmUGb1rD7s+47X6zn3nXvvef1hce69e+2117p7n3X+ax2qRthTmCAMavi9X9DVDzaPxod4S1iGbXhc+Kkf1jKgMkthHzyNITitYfR5XCn8Wdl6NexSoa1BOMXOzm/Dssz5KGGpjE4NVe7ALngI1zeMbMYMLBK+bJgzHGdgBNZgubC8lWWrDGBPvIlTc0b/xu/YiAX4AIdjOoZi15rOFnyLW4QF2U6EQlQXQFpoGKbiYNzcobXXcI2wtplSdfdAIPwiPIhvKrA4GSuEszL7OahmByKTg/AMJkrHogr8jmOElXmDne1A1F3D2fgOp6vOeejGzKLBqgK4FfNpePpWh9FFA+0HENn1GtzVtp1yuLtooL0AIpPDcJ/+oSQ9+AFThdeLbuJOF34Ue3VooxGbJC41F3OEzeiHLBT2o2OCthUrsBarpAfhJ9gkbK2t0/RB1slNfFQHc+FFjMSXmC9cK8zHmsx5+uRF5QKIXEOTS81N+Dvnt7OwFJdhlnDFDuuVRGtHKEzDDdgPw5XP9/Ml/nN/E50eLBBOb8WlvncgsuvVEt8fjwO09rA6Hi9JPOlHydlGdGFYCzZRNoDENDshZyPwLt7BKFwlny+dna1ZEsVHKHTjCWzAOtxR3mwhVmCCsL6WxZ6SnP5ICu4BbKkqgGH4GIe17W4+XsU0afcH4iS8J/zVjrH8IxQSNU4Z4rd2DOeg99xPxgtSYbMKw4W/2u1aNNuB/bFIKk4aA12MMVIB3xe24gLp5s/jTMuE48o4m4fiHUj//Nc5oz1S7TuhhP0PpX/4LSn75OHOujVbRrMjtLnG8V9uGO3CCcIXeKXA7jY8JkwU2RE8t0D3XmFMX5ShCMVpdLuxm9ipGhpXy1L3Fcxeh9vrbI2VqrR69GA9jsDbwl7tBFDMRiOTNXozUdgDj0gPsX+kCmwlDm2Y3Y0T8Xbt+3opqN7M0y21W46vBbBP3U61hPJUIuy8xaELT1LHY7ZjA2bhYeHXWu0wXHL+YhyDS4RVmf36a0l0Qqd75SLMVlxOrsaNwty6uV1SHbFR+LdtH1TRlQgD8IXU1G2uyUyhp90bNg+dBRCZjJUKkb6K+tmYLnLpdVvovCuRZLnU1O2LDlwqZbXK0HlnLjJZKKXKVX3MuE7Yt+N1a6imtRiZLMY43IM/CrRHShmoElTdGyVsxG1S23xTgfakqpZtxoV2/twXdpy3UHrhkYdDWrDaFM240IXCgLbSXWTyqZSdGlFZC7LZEZqhtc5DEfJq58pe+DULYB3OEwa2vAuRyWgcm6OxsEWLhWgWwAeYQotUNzLZG3NyNLZKdUIlaBbAPImtvi8MLhVEZLKbVPuOy9F6FT/3L5VIxgfhWWkX1uNMLM3IV+yg2/t5VynHz8OBOZbXYpLwWUde16E5FwpjpJbHUOlVz5N4Vvi8Qe8QnCzVvucXWNuCKcIb/y+ZC+OxpE53g/S6dLV0BA/AYKnA363Ayvc4R/iqZvN/CiAyGSW1vo9U/um9TQr0OdyatU6iLT8LUWYHeqUbl+NCqRm1e472JqnEXCI1xeYK63awUzHK1QP1i6dAhkj9zv1rv26RjtQf+BO/iVojq35uP+A/urI6Gkydy9MAAAAASUVORK5CYII=' />\n";
+  //result += "  <link id='favicon' rel='shortcut icon' type='image/png' href='" + faviconString( "image/png" ) + "' />\n";
+  result += "  <script type='text/javascript'>\n" + htmlJS() + "\n</script>\n";
+  result += "  <style>\n" + htmlCSS() + "\n</style>\n";
   result += "</head>\n";
   return result;
 }
 
 // html header
-String htmlHeader( String device ) {
-  String result = "<div id='signalWrap'>Signal Strength: <span id='signal'>" + String( WiFi.RSSI() ) + " dBm</span></div>"; 
-  result += "<h1>" + device + " <small style='color:#ccc'>a D1Mini Node Exporter</small></h1>\n";
+String htmlHeader() {
+  String result( ( char * ) 0 );
+  result.reserve( 170 );
+  result += "<div id='signalWrap'>Signal Strength: <span id='signal'>" + String( WiFi.RSSI() ) + " dBm</span></div>\n"; 
+  result += "<h1>" + String( dnsname ) + " <small style='color:#ccc'>a D1Mini Node Exporter</small></h1>\n";
   result += "<hr />\n";
   return result;
 }
 
 // html footer
 String htmlFooter() {
-  String result = "<hr style='margin-top:40px;' />\n";
-  result += "<p style='color:#ccc;float:right'>";
-  result += staticIP ? "Static" : "";
-  result += "Node IP: " + ip + "</p>\n";
-  result += "<p style='color:#ccc'><strong>S</strong>imple<strong>ESP</strong> v" + String( history ) + "</p>\n";
+  String result( ( char * ) 0 );
+  result.reserve( 250 );
+  result += "<hr style='margin-top:40px;' />\n";
+  result += "<div id='footer'>\n";
+  result += "  <p class='right'>";
+  result += staticIP ? "Static" : "Dynamic";
+  result += " IP: " + ip + "</p>\n";
+  result += "  <p class='left'><strong>S</strong>imple<strong>ESP</strong> v" + String( history ) + "</p>\n";
+  result += "  <p>source: <a href='https://github.com/vaddi/d1mini_node' target='_blank'>github.com</a></p>\n";
+  result += "</div>\n";
   return result;
 }
 
-// html body
-String htmlBody( String content ) {
-  String result = "<!doctype html>\n";
-  result += htmlHead( String( dnsname ) );
+// html body (wrapping content)
+String htmlBody( String& content ) {
+  String result = "";
+//  String result( ( char * ) 0 );
+//  result.reserve( 10000 );
+  result += "<!DOCTYPE html>\n";
+  result += "<html lang='en'>\n";
+  result += htmlHead();
   result += "<body>\n";
-  result += htmlHeader( String( dnsname ) );
+  result += htmlHeader();
   result += content;
   result += htmlFooter();
   result += "</body>\n";
@@ -935,19 +1141,24 @@ String htmlBody( String content ) {
 
 // initial page
 void handle_root() {
-  debugOut( "/" );
   if ( captiveHandler() ) { // If captive portal redirect instead of displaying the root page.
     return;
   }
-  String result = "";
+  currentRequest = "/";
+  debugOut( currentRequest );
+  authorisationHandler();
+  String result( ( char * ) 0 );
+  result.reserve( 2000 );
   // create current checksum
   String checksumString = sha1( String( ssid ) + String( password ) + String( dnsname ) + String( place ) 
-      + String( (int) authentication ) + String( authuser )  + String( authpass )
-      + String( mcpchannels ) + String( (int) silent )  + String( (int) gcsensor ) + String( (int) mq135sensor ) 
-      + String( (int) bme280sensor ) + String( (int) ds18b20sensor ) + String( (int) mcp3008sensor ) + String( (int) debug )  
+      + String( (int) authentication ) + String( authuser ) + String( authpass ) 
+      + String( (int) tokenauth ) + String( token ) 
+      + String( (int) secpush ) + String( secpushtime ) 
+      + String( mcpchannels ) + String( (int) silent ) + String( (int) gcsensor ) + String( (int) mq135sensor ) 
+      + String( (int) bme280sensor ) + String( (int) ds18b20sensor ) + String( (int) mcp3008sensor ) + String( (int) debug ) 
       + String( (int) staticIP ) + ip2Str( ipaddr ) + ip2Str( gateway ) + ip2Str( subnet ) + ip2Str( dns1 ) + ip2Str( dns2 ) 
       );
-  char checksum[ eepromchk ]; 
+  char checksum[ eepromchk ];
   checksumString.toCharArray(checksum, eepromchk); // write checksumString (Sting) into checksum (char Arr)
   result += "<h2>Info</h2>\n";
   result += "<p>A Prometheus scrape ready BME280/MQ135/DS18B20/Geigercounter Node Exporter.<br />\n";
@@ -956,38 +1167,49 @@ void handle_root() {
   result += "CO, CO2, Ammonium, Acetone and Diphenylmethane.</p>\n";
   result += "<h2>Links</h2>\n";
   result += "<table id='links'>\n";
-  result += "  <tr><td><a href='/metrics'>/metrics</a></td><td></td></tr>\n";
-  result += "  <tr><td><a href='/setup'>/setup</a></td><td></td></tr>\n";
-  result += "  <tr><td><a href='/restart' onclick=\"return confirm('Restart the Device?');\">/restart</a></td><td></td></tr>\n";
-  result += "  <tr><td><a href='/restart?reset=1' onclick=\"return confirm('Reset the Device to Factory Defaults?');\">/reset</a></td><td>*</td></tr>\n";
+  if( tokenauth ) {
+    result += "  <tr><td><a href='/metrics?apikey=" + String( token ) + "'>/metrics</a></td>(Token: " + String( token ) + ")<td></td></tr>\n";
+  } else {
+    result += "  <tr><td><a href='/metrics'>/metrics</a></td><td></td></tr>\n";
+  }
+  result += "  <tr><td><a href='/network'>/network</a></td><td>(Network Setup)</td></tr>\n";
+  result += "  <tr><td><a href='/device'>/device</a></td><td>(Device Setup)</td></tr>\n";
+  result += "  <tr><td><a href='/auth'>/auth</a></td><td>(Authentification Setup)</td></tr>\n";
+  result += "  <tr><td><a href='/reset' onclick=\"return confirm('Reset the Device?');\">/reset</a></td><td>Simple reset</td></tr>\n";
+  result += "  <tr><td><a href='/restart' onclick=\"return confirm('Restart the Device?');\">/restart</a></td><td>Simple restart</td></tr>\n";
+  result += "  <tr><td><a href='/restart?reset=1' onclick=\"return confirm('Reset the Device to Factory Defaults?');\">/restart?reset=1</a></td><td>Factory-Reset*</td></tr>\n";
   result += "</table>\n";
   result += "<p>* Clear EEPROM, will reboot in Setup (Wifi Acces Point) Mode named <strong>esp_setup</strong>!</p>";
   result += "<h2>Enabled Sensors</h2>\n";
   result += "<table>\n";
   if( gcsensor ) {
-    result += "  <tr><td>Geigercounter</td><td>MightyOhm Geigercounter</td><td>(RX " + String( gcrx ) + ", TX " + String( gctx ) + ")</td></tr>\n";
+    result += "  <tr><td>Geigercounter</td><td>MightyOhm Geigercounter</td><td>(RX " + String( (int) gcrx, HEX ) + ", TX " + String( (int) gctx, HEX ) + ")</td></tr>\n";
   }
   if( mq135sensor ) {
     result += "  <tr><td>MQ135</td><td>Air Quality Sensor</td><td>(Pin " + String( mqpin ) + ")</td></tr>\n";
   }
   if( ds18b20sensor ) {
-    result += "  <tr><td>DS18B20</td><td>Temperature Sensor</td><td>(Pin " + String( ONE_WIRE_BUS ) + ")</td></tr>\n";
+    result += "  <tr><td>DS18B20</td><td>Temperature Sensor</td><td>(Pin " + String( onewire ) + ")</td></tr>\n";
   }
   if( bme280sensor ) {
+    //char pinBuffer[7]; // buffer for hex pins
+    //sprintf(pinBuffer, "%02x", ( BME280_ADDRESS ) );
     result += "  <tr><td>BME280</td><td>Air Temperature, Humidity and Pressure Sensor</td><td>(Adress " + String( BME280_ADDRESS ) + ")</td></tr>\n";
   }
   if( mcp3008sensor ) {
-    result += "  <tr><td>MCP3008</td><td>MCP3008 Analoge Digital Converter</td><td>(Channels " + String( mcpchannels ) + ")</td></tr>\n";
+    result += "  <tr><td>MCP3008</td><td>MCP3008 Analoge Digital Converter</td><td>Pin " + String( mqpin ) + " (Channels " + String( mcpchannels ) + ")</td></tr>\n";
   }
-  result += "  <tr><td></td><td></td></tr>\n"; // space line
-  result += "  <tr><td>DNS Search Domain: </td><td>" + dnssearch + "</td></tr>\n";
+  result += "  <tr><td></td><td></td><td></td></tr>\n"; // space line
+  result += "  <tr><td>DNS Search Domain: </td><td>" + dnssearch + "</td><td></td></tr>\n";
+  // Silent
   if( silent ) {
-    result += "  <tr><td>Silent Mode</td><td>Enabled (LED disabled)</td></tr>\n";
+    result += "  <tr><td>Silent Mode</td><td>Enabled</td><td>(LED disabled)</td></tr>\n";
   } else {
-    result += "  <tr><td>Silent Mode</td><td>Disabled (LED blink on Request)</td></tr>\n";
+    result += "  <tr><td>Silent Mode</td><td>Disabled</td><td>(LED blink on Request)</td></tr>\n";
   }
+  // Debug
   if( debug ) {
-    result += "  <tr><td>Debug Mode</td><td>Enabled";
+    result += "  <tr><td>Debug Mode</td><td>Enabled</td><td>";
     if( gcsensor ) {
       result += " (Warning: Geigercounter is disabled in Debug mode!)";
     } else {
@@ -995,25 +1217,43 @@ void handle_root() {
     }
     result += "</td></tr>\n";
   } else {
-    result += "  <tr><td>Debug Mode</td><td>Disabled</td></tr>\n";
+    result += "  <tr><td>Debug Mode</td><td>Disabled</td><td></td></tr>\n";
   }
-  if( strcmp( checksum, lastcheck ) == 0 ) { // compare checksums
-      result += "<tr><td>Checksum</td><td><span style='color:#66ff66;'>&#10004;</span></td></tr>\n";
+  // SecPush
+  if( secpush ) {
+    result += "  <tr><td>SecPush</td><td>Enabled</td>";
+    if( secpushstate ) {
+      String currentSecPush = String( ( ( millis() - secpushtime ) / 60 /60 ) );
+      currentSecPush += "/" + String( ( (int) secpushtime - ( ( millis() - secpushtime ) / 60 /60 ) ) );
+      result += "<td>active (" + currentSecPush + " Seconcs, depart/remain)</td>";      
     } else {
-      result += "<tr><td>Checksum</td><td><span style='color:#ff6666;'>&#10008;</span> Invalid, plaese <a href='/setup'>Setup</a> your Device.</td></tr>\n";
+      result += "<td>inactive</td>";
     }
-  result += "<table>\n";
-  response( htmlBody( result ), "text/html");
+    result += "</tr>\n";
+  } else {
+    result += "  <tr><td>SecPush</td><td>Disabled</td><td>";
+    result += ( secpushstate ) ? "active" : "inactive";
+    result += "</td></tr>\n";
+  }
+  // Checksum
+  if( strcmp( checksum, lastcheck ) == 0 ) { // compare checksums
+    result += "<tr><td>Checksum</td><td>Valid</td><td><span style='color:#66ff66;'>&#10004;</span></td></tr>\n";
+  } else {
+    result += "<tr><td>Checksum</td><td>Invalid</td><td><span style='color:#ff6666;'>&#10008;</span> Plaese <a href='/network'>Setup</a> your Device.</td></tr>\n";
+  }
+  result += "</table>\n";
+  result =  htmlBody( result );
+  response( result, "text/html" );
 }
 
 // redirect client to captive portal after connect to wifi
 boolean captiveHandler() {
-  if( SoftAccOK && ! isIp( server.hostHeader() ) && server.hostHeader() != ( String( dnsname ) + "." + dnssearch ) ) { // && server.hostHeader() != ( String( myHostname ) + ".local" )
-    String redirectUrl = String("http://") + ip2Str( server.client().localIP() ) + String( "/setup" );
+  if( SoftAccOK && ! isIp( server.hostHeader() ) && server.hostHeader() != ( String( dnsname ) + "." + dnssearch ) ) {
+    String redirectUrl = String("http://") + ip2Str( server.client().localIP() ) + String( "/network" );
     server.sendHeader("Location", redirectUrl, false );
     server.send( 302, "text/plain", ""); // Empty content inhibits Content-length header so we have to close the socket ourselves.
-    if( debug ) { // enrich Debug output
-      Serial.print( "- Redirect from captureHanlder to uri: " );
+    if( debug ) {
+      Serial.print( "- Redirect from captiveHandler() to uri: " );
       Serial.println( redirectUrl );
     }
     server.client().stop(); // Stop is needed because we sent no content length
@@ -1026,51 +1266,97 @@ boolean captiveHandler() {
 
 // 404 Handler
 void notFoundHandler() {
-  debugOut( "404" );
   if ( captiveHandler() ) { // If captive portal redirect instead of displaying the error page.
     return;
   }
+  currentRequest = "404";
+  debugOut( currentRequest );
   String result = "";
   result += "<div>";
   result += "  <p>404 Page not found.</p>";
   result += "  <p>Where sorry, but are unable to find page: <strong>" + String( server.uri() ) + "</strong></p>";
   result += "</div>";
-  server.send(404, "text/html", htmlBody( result ) );
+  server.send( 404, "text/html", htmlBody( result ) );
 }
 
-// Dummy favicon Handler
-void faviconHandler() {
-  //debugOut( "Favicon" );
-  response( "", "image/ico");
+// favicon image as base64 String
+String faviconString( String textType ) {
+  //String favicon = "";
+  String favicon( ( char * ) 0 );
+  favicon.reserve( 1830 );
+  favicon += "data:" + textType + ";base64,";
+  favicon += "AAABAAEAMDAAAAEAIAAyBQAAFgAAAIlQTkcNChoKAAAADUlIRFIAAAAwAAAAMAgGAAAAVwL5hwAABPl";
+  favicon += "JREFUaIG92WmoVVUUB/Cf+crqpYWmNFFaUmEZaUQFiUVlEUFlAxI2iBVNUIRBQcSiMIogm6GiCRtIGp";
+  favicon += "SygeqDhWKkNlhGFBpGRGrmUGb1rD7s+47X6zn3nXvvef1hce69e+2117p7n3X+ax2qRthTmCAMavi9X";
+  favicon += "9DVDzaPxod4S1iGbXhc+Kkf1jKgMkthHzyNITitYfR5XCn8Wdl6NexSoa1BOMXOzm/Dssz5KGGpjE4N";
+  favicon += "Ve7ALngI1zeMbMYMLBK+bJgzHGdgBNZgubC8lWWrDGBPvIlTc0b/xu/YiAX4AIdjOoZi15rOFnyLW4Q";
+  favicon += "F2U6EQlQXQFpoGKbiYNzcobXXcI2wtplSdfdAIPwiPIhvKrA4GSuEszL7OahmByKTg/AMJkrHogr8jm";
+  favicon += "OElXmDne1A1F3D2fgOp6vOeejGzKLBqgK4FfNpePpWh9FFA+0HENn1GtzVtp1yuLtooL0AIpPDcJ/+o";
+  favicon += "SQ9+AFThdeLbuJOF34Ue3VooxGbJC41F3OEzeiHLBT2o2OCthUrsBarpAfhJ9gkbK2t0/RB1slNfFQH";
+  favicon += "c+FFjMSXmC9cK8zHmsx5+uRF5QKIXEOTS81N+Dvnt7OwFJdhlnDFDuuVRGtHKEzDDdgPw5XP9/Ml/nN";
+  favicon += "/E50eLBBOb8WlvncgsuvVEt8fjwO09rA6Hi9JPOlHydlGdGFYCzZRNoDENDshZyPwLt7BKFwlny+dna";
+  favicon += "1ZEsVHKHTjCWzAOtxR3mwhVmCCsL6WxZ6SnP5ICu4BbKkqgGH4GIe17W4+XsU0afcH4iS8J/zVjrH8I";
+  favicon += "xQSNU4Z4rd2DOeg99xPxgtSYbMKw4W/2u1aNNuB/bFIKk4aA12MMVIB3xe24gLp5s/jTMuE48o4m4fi";
+  favicon += "HUj//Nc5oz1S7TuhhP0PpX/4LSn75OHOujVbRrMjtLnG8V9uGO3CCcIXeKXA7jY8JkwU2RE8t0D3XmF";
+  favicon += "MX5ShCMVpdLuxm9ipGhpXy1L3Fcxeh9vrbI2VqrR69GA9jsDbwl7tBFDMRiOTNXozUdgDj0gPsX+kCm";
+  favicon += "wlDm2Y3Y0T8Xbt+3opqN7M0y21W46vBbBP3U61hPJUIuy8xaELT1LHY7ZjA2bhYeHXWu0wXHL+YhyDS";
+  favicon += "4RVmf36a0l0Qqd75SLMVlxOrsaNwty6uV1SHbFR+LdtH1TRlQgD8IXU1G2uyUyhp90bNg+dBRCZjJUK";
+  favicon += "kb6K+tmYLnLpdVvovCuRZLnU1O2LDlwqZbXK0HlnLjJZKKXKVX3MuE7Yt+N1a6imtRiZLMY43IM/CrR";
+  favicon += "HShmoElTdGyVsxG1S23xTgfakqpZtxoV2/twXdpy3UHrhkYdDWrDaFM240IXCgLbSXWTyqZSdGlFZC7";
+  favicon += "LZEZqhtc5DEfJq58pe+DULYB3OEwa2vAuRyWgcm6OxsEWLhWgWwAeYQotUNzLZG3NyNLZKdUIlaBbAP";
+  favicon += "Imtvi8MLhVEZLKbVPuOy9F6FT/3L5VIxgfhWWkX1uNMLM3IV+yg2/t5VynHz8OBOZbXYpLwWUde16E5";
+  favicon += "FwpjpJbHUOlVz5N4Vvi8Qe8QnCzVvucXWNuCKcIb/y+ZC+OxpE53g/S6dLV0BA/AYKnA363Ayvc4R/i";
+  favicon += "qZvN/CiAyGSW1vo9U/um9TQr0OdyatU6iLT8LUWYHeqUbl+NCqRm1e472JqnEXCI1xeYK63awUzHK1Q";
+  favicon += "P1i6dAhkj9zv1rv26RjtQf+BO/iVojq35uP+A/urI6Gkydy9MAAAAASUVORK5CYII=";
+  return favicon;
+}
+
+void faviconIcoHandler() {
+  //debugOut( "FaviconX" );
+  String textType = "image/x-icon";
+  webString = faviconString( textType );
+  response( webString, textType );
+}
+
+void faviconPngHandler() {
+  //debugOut( "FaviconPNG" );
+  String textType = "image/png";
+  webString = faviconString( textType );
+  response( webString, textType );
 }
 
 // Signal Handler
 void signalHandler() {
-  //debugOut( "Signal" );
-  response( String( WiFi.RSSI() ), "text/plain");
+  //debugOut( "WiFiSignal" );
+  webString = String( WiFi.RSSI() );
+  response( webString, "text/plain" );
 }
 
-// Setup Handler
-void setupHandler() {
-  if( ! SoftAccOK && authentication ) {
-    if( ! server.authenticate( authuser, authpass ) ) {
-      return server.requestAuthentication();
-    }
-  }
+// Network Setup Handler
+void networkSetupHandler() {
+  currentRequest = "networksetup";
+  debugOut( currentRequest );
+  authorisationHandler();
+  char activeState[10];
   String result = "";
-  result += "<h2>Setup</h2>\n";
-  result += "<div id='msg'></div>\n";
+  result += "<h2>Network Setup</h2>\n";
   result += "<div>";
-  result += "  <p>After Submit, the System will save Configuration into EEPROM, ";
-  result += "  do a reboot and reload config from EEPROM<span style='color:red'>!</span></p>";
+  if( SoftAccOK ) {
+    result += "  <p>Welcome to the initial Setup. You should tell this device you wifi credentials";
+    result += "  and give em a uniqe Name. If no static IP is setup, the device will request an IP from a DHCP Server.</p>";
+  } else {
+    result += "  <p>Wifi and IP settings. Change the Nodes Wifi credentials or configure a static ip. If no static IP is ";
+    result += "  setup, the device will request an IP from a DHCP Server.</p>\n";
+  }
   result += "</div>\n";
-  result += "<form action='/form' method='POST' id='setup'>\n";
-  result += "<table border='0'>\n";
+  result += "<div>";
+  result += "<form action='/networkform' method='POST' id='networksetup'>\n";
+  result += "<table style='border:none;'>\n";
   result += "<tbody>\n";
   result += "  <tr><td><strong>Wifi Settings</strong></td><td></td></tr>\n"; // head line
   result += "  <tr>\n";
   result += "    <td><label for='ssid'>SSID<span style='color:red'>*</span>: </label></td>\n";
-  result += "    <td><input id=''ssid name='ssid' type='text' placeholder='Wifi SSID' value='" + String( ssid ) + "' size='" + String( eepromStringSize ) + "' required /></td>\n";
+  result += "    <td><input id='ssid' name='ssid' type='text' placeholder='Wifi SSID' value='" + String( ssid ) + "' size='" + String( eepromStringSize ) + "' required /></td>\n";
   result += "  </tr>\n";
   result += "  <tr>\n";
   result += "    <td><label for='password'>Password<span style='color:red'>*</span>: </label></td>\n";
@@ -1080,18 +1366,18 @@ void setupHandler() {
   result += "    <td><label for='dnsname'>DNS Name<span style='color:red'>*</span>: </label></td>\n";
   result += "    <td><input id='dnsname' name='dnsname' type='text' placeholder='DNS Name' value='" + String( dnsname ) + "' size='" + String( eepromStringSize ) + "' required /></td>\n";
   result += "  </tr>\n";
-  String staticIPChecked = staticIP ? "checked" : "";
+  strcpy( activeState, ( staticIP ? "checked" : "" ) );
   result += "  <tr>\n";
   result += "    <td><label for='staticIP'>Static IP: </label></td>\n";
-  result += "    <td><input id='staticIP' name='staticIP' type='checkbox' onclick='renderRows( this, \"staticIPRow\" )' " + staticIPChecked + " /></td>\n";
+  result += "    <td><input id='staticIP' name='staticIP' type='checkbox' onclick='renderRows( this, \"staticIPRow\" )' " + String( activeState ) + " /></td>\n";
   result += "  </tr>\n";
   result += "  <tr class='staticIPRow'>\n";
   result += "    <td><label for='ipaddr'>IP: </label></td>\n";
-  result += "    <td><input id='ipaddr' name='ipaddr' type='text' placeholder='192.168.1.X' value='" + ip2Str( ipaddr ) + "' size='" + String( eepromStringSize ) + "' /></td>\n";
+  result += "    <td><input id='ipaddr' name='ipaddr' type='text' placeholder='192.168.1.2' value='" + ip2Str( ipaddr ) + "' size='" + String( eepromStringSize ) + "' /></td>\n";
   result += "  </tr>\n";
   result += "  <tr class='staticIPRow'>\n";
   result += "    <td><label for='gateway'>Gateway: </label></td>\n";
-  result += "    <td><input id='gateway' name='gateway' type='text' placeholder='192.168.1.X' value='" + ip2Str( gateway ) + "' size='" + String( eepromStringSize ) + "' /></td>\n";
+  result += "    <td><input id='gateway' name='gateway' type='text' placeholder='192.168.1.1' value='" + ip2Str( gateway ) + "' size='" + String( eepromStringSize ) + "' /></td>\n";
   result += "  </tr>\n";
   result += "  <tr class='staticIPRow'>\n";
   result += "    <td><label for='subnet'>Subnet: </label></td>\n";
@@ -1099,97 +1385,35 @@ void setupHandler() {
   result += "  </tr>\n";
   result += "  <tr class='staticIPRow'>\n";
   result += "    <td><label for='dns1'>DNS: </label></td>\n";
-  result += "    <td><input id='dns1' name='dns1' type='text' placeholder='192.168.1.X' value='" + ip2Str( dns1 ) + "' size='" + String( eepromStringSize ) + "' /></td>\n";
+  result += "    <td><input id='dns1' name='dns1' type='text' placeholder='192.168.1.1' value='" + ip2Str( dns1 ) + "' size='" + String( eepromStringSize ) + "' /></td>\n";
   result += "  </tr>\n";
   result += "  <tr class='staticIPRow'>\n";
   result += "    <td><label for='dns2'>DNS 2: </label></td>\n";
   result += "    <td><input id='dns2' name='dns2' type='text' placeholder='8.8.8.8' value='" + ip2Str( dns2 ) + "' size='" + String( eepromStringSize ) + "' /></td>\n";
   result += "  </tr>\n";
   result += "  <tr><td>&nbsp;</td><td></td></tr>\n"; // dummy line
-  
-  result += "  <tr><td><strong>Device Settings</strong></td><td></td></tr>\n"; // head line
-  result += "  <tr>\n";
-  result += "    <td><label for='place'>Place: </label></td>\n";
-  result += "    <td><input id='place' name='place' type='text' placeholder='Place Description' value='" + String( place ) + "' size='" + String( eepromStringSize ) + "' /></td>\n";
-  result += "  </tr>\n";
-  String silentChecked = silent ? "checked" : "";
-  result += "  <tr>\n";
-  result += "    <td><label for='silent'>Silent Mode: </label></td>\n";
-  result += "    <td><input id='silent' name='silent' type='checkbox' " + silentChecked + "  /></td>\n";
-  result += "  </tr>\n";
-  String debugChecked = debug ? "checked" : "";
-  result += "  <tr>\n";
-  result += "    <td><label for='debug'>Debug Mode: </label></td>\n";
-  result += "    <td><input id='debug' name='debug' type='checkbox' " + debugChecked + "  /></td>\n";
-  result += "  </tr>\n";
-  result += "  <tr><td>&nbsp;</td><td></td></tr>\n"; // dummy line
-
-  result += "  <tr><td><strong>Basic Authentication</strong></td><td></td></tr>\n"; // head line
-  String authenticationChecked = authentication ? "checked" : "";
-  result += "  <tr>\n";
-  result += "    <td><label for='authentication'>Basic Auth: </label></td>\n";
-  result += "    <td><input id='authentication' name='authentication' type='checkbox' onclick='renderRows( this, \"authRow\" )' " + authenticationChecked + " /></td>\n";
-  result += "  </tr>\n";
-  result += "  <tr class='authRow'>\n";
-  result += "    <td><label for='authuser'>Username: </label></td>\n";
-  result += "    <td><input id='authuser' name='authuser' type='text' placeholder='Username' value='" + String( authuser ) + "' size='" + String( eepromStringSize ) + "' /></td>\n";
-  result += "  </tr>\n";
-  result += "  <tr class='authRow'>\n";
-  result += "    <td><label for='authpass'>User Password: </label></td>\n";
-  result += "    <td><input id='authpass' name='authpass' type='password' placeholder='Password' value='" + String( authpass ) + "' size='" + String( eepromStringSize ) + "' /></td>\n";
-  result += "  </tr>\n";
-  result += "  <tr><td>&nbsp;</td><td></td></tr>\n"; // dummy line
-  
-  result += "  <tr><td><strong>Sensor Setup</strong></td><td></td></tr>\n"; // head line
-  String gcChecked = gcsensor ? "checked" : "";
-  result += "  <tr>\n";
-  result += "    <td><label for='gcsensor'>Radiation Sensor: </label></td>\n";
-  result += "    <td><input id='gcsensor' name='gcsensor' type='checkbox' " + gcChecked + "  /> <span style='color:red'>**</span></td>\n";
-  result += "  </tr>\n";
-  String mq135Checked = mq135sensor ? "checked" : "";
-  result += "  <tr>\n";
-  result += "    <td><label for='mq135sensor'>MQ-135 Sensors: </label></td>\n";
-  result += "    <td><input id='mq135sensor' name='mq135sensor' type='checkbox' " + mq135Checked + "  /></td>\n";
-  result += "  </tr>\n";
-  String bme280Checked = bme280sensor ? "checked" : "";
-  result += "  <tr>\n";
-  result += "    <td><label for='bme280sensor'>BME280 Sensors: </label></td>\n";
-  result += "    <td><input id='bme280sensor' name='bme280sensor' type='checkbox' " + bme280Checked + "  /> <span style='color:red'>**</span></td>\n";
-  result += "  </tr>\n";
-  String ds18b20Checked = ds18b20sensor ? "checked" : "";
-  result += "  <tr>\n";
-  result += "    <td><label for='ds18b20sensor'>DS18B20 Sensors: </label></td>\n";
-  result += "    <td><input id='ds18b20sensor' name='ds18b20sensor' type='checkbox' " + ds18b20Checked + "  /></td>\n";
-  result += "  </tr>\n";
-  String mcp3008Checked = mcp3008sensor ? "checked" : "";
-  result += "  <tr>\n";
-  result += "    <td><label for='mcp3008sensor'>MCP 300X ADC: </label></td>\n";
-  result += "    <td><input id='mcp3008sensor' name='mcp3008sensor' type='checkbox' " + mcp3008Checked + " onclick='renderRows( this, \"mcpChannelsRow\" )' /></td>\n";
-  result += "  </tr>\n";
-  result += "  <tr class='mcpChannelsRow'>\n";
-  result += "    <td><label for='mcpchannels'>MCP Channels: </label></td>\n";
-  result += "    <td><input id='mcpchannels' name='mcpchannels' type='number' min='0' max='8' value='" + String( mcpchannels ) + "' /></td>\n";
-  result += "  </tr>\n";
-  result += "  <tr><td>&nbsp;</td><td></td></tr>\n"; // dummy line
-  
   result += "  <tr>\n";
   result += "    <td></td><td><button name='submit' type='submit'>Submit</button></td>\n";
   result += "  </tr>\n";
   result += "</tbody>\n";
-  result += "</form>\n";
   result += "</table>\n";
-  result += "<div>";
+  result += "</form>\n";
+  result += "</div>\n";
+  result += "<div>\n";
   result += "  <p><span style='color:red'>*</span>&nbsp; Required fields!</p>\n";
-  result += "  <p><span style='color:red'>**</span> Enable only if sensor is pluged in!</p>\n";
   result += "</div>\n";
   result += "<a href='/'>Zur&uuml;ck</a>\n";
-  response( htmlBody( result ), "text/html");
-  debugOut( "Setup" );
+  result = htmlBody( result );
+  response( result, "text/html" );
 }
 
-// Form Handler
-void formHandler() {
-  // validate required args are set
+
+// Network Form Handler
+void networkFormHandler() {
+  currentRequest = "networkform";
+  debugOut( currentRequest );
+  authorisationHandler();
+    // validate required args are set
   if( ! server.hasArg( "ssid" ) || ! server.hasArg( "password" ) || ! server.hasArg( "dnsname" ) ) {
     server.send(400, "text/plain", "400: Invalid Request, Missing one of required form field field (ssid, password or dnsname).");
     return;
@@ -1207,9 +1431,6 @@ void formHandler() {
   passwordString.toCharArray(password, eepromStringSize);
   String dnsnameString = server.arg("dnsname");
   dnsnameString.toCharArray(dnsname, eepromStringSize);
-  // Place
-  String placeString = server.arg("place");
-  placeString.toCharArray(place, eepromStringSize);
   // Static IP stuff
   staticIP = server.arg("staticIP") == "on" ? true : false;
   String ipaddrString = server.arg("ipaddr");
@@ -1237,15 +1458,100 @@ void formHandler() {
   byte tmpdns2[4];
   parseBytes(dns2Str, '.', tmpdns2, 4, 10);
   dns2 = tmpdns2;
+  // save data into eeprom
+  bool result = saveSettings();
+  delay(50);
+  // send user to restart page
+  server.sendHeader( "Location","/restart" );
+  server.send( 303 );
+}
+
+// Device Setup Handler
+void deviceSetupHandler() {
+  currentRequest = "devicesetup";
+  debugOut( currentRequest );
+  authorisationHandler();
+  char activeState[10];
+  String result = "";
+  result += "<h2>Device Setup</h2>\n";
+  result += "<div>";
+  result += "  <p>Here you can configure all device specific stuff like connected Sensors or just set a place description.</p>";
+  result += "</div>\n";
+  result += "<form action='/deviceform' method='POST' id='devicesetup'>\n";
+  result += "<table style='border:none;'>\n";
+  result += "<tbody>\n";
+  result += "  <tr><td><strong>Device Settings</strong></td><td></td></tr>\n"; // head line
+  result += "  <tr>\n";
+  result += "    <td><label for='place'>Place: </label></td>\n";
+  result += "    <td><input id='place' name='place' type='text' placeholder='Place Description' value='" + String( place ) + "' size='" + String( eepromStringSize ) + "' /></td>\n";
+  result += "  </tr>\n";
+  strcpy( activeState, ( silent ? "checked" : "" ) );
+  result += "  <tr>\n";
+  result += "    <td><label for='silent'>Silent Mode: </label></td>\n";
+  result += "    <td><input id='silent' name='silent' type='checkbox' " + String( activeState ) + "  /></td>\n";
+  result += "  </tr>\n";
+  strcpy( activeState, ( debug ? "checked" : "" ) );
+  result += "  <tr>\n";
+  result += "    <td><label for='debug'>Debug Mode: </label></td>\n";
+  result += "    <td><input id='debug' name='debug' type='checkbox' onclick='renderGC()' " + String( activeState ) + "  /></td>\n";
+  result += "  </tr>\n";
+  result += "  <tr><td>&nbsp;</td><td></td></tr>\n"; // dummy line
+  result += "  <tr><td><strong>Sensor Setup</strong></td><td></td></tr>\n"; // head line
+  strcpy( activeState, ( gcsensor ? "checked" : "" ) );
+  result += "  <tr>\n";
+  result += "    <td><label for='gcsensor'>Radiation Sensor: </label></td>\n";
+  result += "    <td><input id='gcsensor' name='gcsensor' type='checkbox' onclick='renderGC()' " + String( activeState ) + " /> <span style='color:red'>**</span></td>\n";
+  result += "  </tr>\n";
+  strcpy( activeState, ( mq135sensor ? "checked" : "" ) );
+  result += "  <tr>\n";
+  result += "    <td><label for='mq135sensor'>MQ-135 Sensors: </label></td>\n";
+  result += "    <td><input id='mq135sensor' name='mq135sensor' type='checkbox' " + String( activeState ) + "  /></td>\n";
+  result += "  </tr>\n";
+  strcpy( activeState, ( bme280sensor ? "checked" : "" ) );
+  result += "  <tr>\n";
+  result += "    <td><label for='bme280sensor'>BME280 Sensors: </label></td>\n";
+  result += "    <td><input id='bme280sensor' name='bme280sensor' type='checkbox' " + String( activeState ) + "  /> <span style='color:red'>**</span></td>\n";
+  result += "  </tr>\n";
+  strcpy( activeState, ( ds18b20sensor ? "checked" : "" ) );
+  result += "  <tr>\n";
+  result += "    <td><label for='ds18b20sensor'>DS18B20 Sensors: </label></td>\n";
+  result += "    <td><input id='ds18b20sensor' name='ds18b20sensor' type='checkbox' " + String( activeState ) + "  /></td>\n";
+  result += "  </tr>\n";
+  strcpy( activeState, ( mcp3008sensor ? "checked" : "" ) );
+  result += "  <tr>\n";
+  result += "    <td><label for='mcp3008sensor'>MCP 300X ADC: </label></td>\n";
+  result += "    <td><input id='mcp3008sensor' name='mcp3008sensor' type='checkbox' " + String( activeState ) + " onclick='renderRows( this, \"mcpChannelsRow\" )' /></td>\n";
+  result += "  </tr>\n";
+  result += "  <tr class='mcpChannelsRow'>\n";
+  result += "    <td><label for='mcpchannels'>MCP Channels: </label></td>\n";
+  result += "    <td><input id='mcpchannels' name='mcpchannels' type='number' min='0' max='8' value='" + String( mcpchannels ) + "' /></td>\n";
+  result += "  </tr>\n";
+  result += "  <tr><td>&nbsp;</td><td></td></tr>\n"; // dummy line
+  result += "  <tr>\n";
+  result += "    <td></td><td><button name='submit' type='submit'>Submit</button></td>\n";
+  result += "  </tr>\n";
+  result += "</tbody>\n";
+  result += "</table>\n";
+  result += "</form>\n";
+  result += "<div>";
+  result += "  <p><span style='color:red'>**</span> Enable only if sensor is pluged in!</p>\n";
+  result += "</div>\n";
+  result += "<a href='/'>Zur&uuml;ck</a>\n";
+  result = htmlBody( result );
+  response( result, "text/html" );
+}
+
+// Device Form Handler
+void deviceFormHandler() {
+  currentRequest = "deviceform";
+  debugOut( currentRequest );
+  authorisationHandler();
   // Sytem stuff
   silent = server.arg("silent") == "on" ? true : false;
   debug = server.arg("debug") == "on" ? true : false;
-  // Authentication stuff
-  authentication = server.arg("authentication") == "on" ? true : false;
-  String authuserString = server.arg("authuser");
-  authuserString.toCharArray(authuser, eepromStringSize);
-  String authpassString = server.arg("authpass");
-  authpassString.toCharArray(authpass, eepromStringSize);
+  // Place
+  String placeString = server.arg("place");
+  placeString.toCharArray(place, eepromStringSize);
   // Sensor stuff
   String mcpchannelsString = server.arg("mcpchannels");
   mcpchannels = mcpchannelsString.toInt();
@@ -1255,17 +1561,110 @@ void formHandler() {
   ds18b20sensor = server.arg("ds18b20sensor") == "on" ? true : false;
   mcp3008sensor = server.arg("mcp3008sensor") == "on" ? true : false;
   // save data into eeprom
-  saveSettings();
+  bool result = saveSettings();
   delay(50);
   // send user to restart page
   server.sendHeader( "Location","/restart" );
   server.send( 303 );
-  debugOut( "Submit" );
+}
+
+
+// Device Setup Handler
+void authSetupHandler() {
+  currentRequest = "authsetup";
+  debugOut( currentRequest );
+  authorisationHandler();
+  char activeState[10];
+  String result = "";
+  result += "<h2>Authorization Setup</h2>\n";
+  result += "<div>";
+  result += "  <p>Authentification settings, configure Basic Auth and set a combination of username and password or use the Token Auth and place a Token.</p>";
+  result += "</div>\n";
+  result += "<form action='/authform' method='POST' id='authsetup'>\n";
+  result += "<table style='border:none;'>\n";
+  result += "<tbody>\n";
+  result += "  <tr><td><strong>Basic Authentication</strong></td><td></td></tr>\n"; // head line
+  strcpy( activeState, ( authentication ? "checked" : "" ) );
+  result += "  <tr>\n";
+  result += "    <td><label for='authentication'>Basic Auth: </label></td>\n";
+  result += "    <td><input id='authentication' name='authentication' type='checkbox' onclick='renderRows( this, \"authRow\" )' " + String( activeState ) + " /></td>\n";
+  result += "  </tr>\n";
+  result += "  <tr class='authRow'>\n";
+  result += "    <td><label for='authuser'>Username: </label></td>\n";
+  result += "    <td><input id='authuser' name='authuser' type='text' placeholder='Username' value='" + String( authuser ) + "' size='" + String( eepromStringSize ) + "' /></td>\n";
+  result += "  </tr>\n";
+  result += "  <tr class='authRow'>\n";
+  result += "    <td><label for='authpass'>User Password: </label></td>\n";
+  result += "    <td><input id='authpass' name='authpass' type='password' placeholder='Password' value='" + String( authpass ) + "' size='" + String( eepromStringSize ) + "' /></td>\n";
+  result += "  </tr>\n";
+  result += "  <tr><td>&nbsp;</td><td></td></tr>\n"; // dummy line
+  result += "  <tr><td><strong>Token Authentication</strong></td><td></td></tr>\n"; // head line
+  strcpy( activeState, ( tokenauth ? "checked" : "" ) );
+  result += "  <tr>\n";
+  result += "    <td><label for='tokenauth'>Token Auth: </label></td>\n";
+  result += "    <td><input id='tokenauth' name='tokenauth' type='checkbox' onclick='renderRows( this, \"tokenAuthRow\" )' " + String( activeState ) + " /></td>\n";
+  result += "  </tr>\n";
+  result += "  <tr class='tokenAuthRow'>\n";
+  result += "    <td><label for='token'>Token: </label></td>\n";
+  result += "    <td>\n";
+  result += "      <input id='token' name='token' type='password' placeholder='' value='" + String( token ) + "' size='" + String( eepromStringSize ) + "' /> \n";
+  result += "      <button name='genToken' type='button' onclick='generateToken( \"token\" )'>Generate Token</button>\n";
+  result += "    </td>\n";
+  result += "  </tr>\n";
+  result += "  <tr><td>&nbsp;</td><td></td></tr>\n"; // dummy line
+  result += "  <tr><td><strong>Disable Authentification after Boot</strong></td><td></td></tr>\n"; // head line
+  strcpy( activeState, ( secpush ? "checked" : "" ) );
+  result += "  <tr>\n";
+  result += "    <td><label for='secpush'>SecPush: </label></td>\n";
+  result += "    <td><input id='secpush' name='secpush' type='checkbox' onclick='renderRows( this, \"secPushRow\" )' " + String( activeState ) + " /></td>\n";
+  result += "  </tr>\n";
+  result += "  <tr class='secPushRow'>\n";
+  result += "    <td><label for='secpushtime'>SecPush Time (in Seconds): </label></td>\n";
+  result += "    <td><input id='secpushtime' name='secpushtime' type='number' placeholder='300' value='" + String( secpushtime ) + "' max='3600' /></td>\n"; // 3600Sec = 1h
+  result += "  </tr>\n";
+  result += "  <tr><td>&nbsp;</td><td></td></tr>\n"; // dummy line
+  result += "  <tr>\n";
+  result += "    <td></td><td><button name='submit' type='submit'>Submit</button></td>\n";
+  result += "  </tr>\n";
+  result += "</tbody>\n";
+  result += "</table>\n";
+  result += "</form>\n";
+  result += "<a href='/'>Zur&uuml;ck</a>\n";
+  result = htmlBody( result );
+  response( result, "text/html" );
+}
+
+// Auth Form Handler
+void authFormHandler() {
+  currentRequest = "authform";
+  debugOut( currentRequest );
+  authorisationHandler();
+  // Authentication stuff
+  authentication = server.arg("authentication") == "on" ? true : false;
+  String authuserString = server.arg("authuser");
+  authuserString.toCharArray(authuser, eepromStringSize);
+  String authpassString = server.arg("authpass");
+  authpassString.toCharArray(authpass, eepromStringSize);
+  // Token based Authentication stuff
+  tokenauth = server.arg("tokenauth") == "on" ? true : false;
+  String tokenString = server.arg("token");
+  tokenString.toCharArray(token, eepromStringSize);
+  secpush = server.arg("secpush") == "on" ? true : false;
+  String secpushtimeString = server.arg("secpushtime");
+  secpushtime = secpushtimeString.toInt();
+// save data into eeprom
+  bool result = saveSettings();
+  delay(50);
+  // send user to restart page
+  server.sendHeader( "Location","/restart" );
+  server.send( 303 );
 }
 
 // Restart Handler
 void restartHandler() {
-  debugOut( "Restart" );
+  currentRequest = "restart";
+  debugOut( currentRequest );
+  authorisationHandler();
   String webString = "<html>\n";
   webString += "<head>\n";
   webString += "  <meta http-equiv='Refresh' content='4; url=/' />\n";
@@ -1290,7 +1689,9 @@ void restartHandler() {
 
 // Reset Handler
 void resetHandler() {
-  debugOut( "Reset" );
+  currentRequest = "reset";
+  debugOut( currentRequest );
+  authorisationHandler();
   String webString = "<html>\n";
   webString += "<head>\n";
   webString += "  <meta http-equiv='Refresh' content='4; url=/' />\n";
@@ -1308,9 +1709,13 @@ void resetHandler() {
 
 // Metrics Handler
 void metricsHandler() {
-  debugOut( "Metrics" );
+  currentRequest = "metrics";
+  debugOut( currentRequest );
+  authorisationHandler();
   String checksumString = sha1( String( ssid ) + String( password ) + String( dnsname ) + String( place ) 
-    + String( (int) authentication ) + String( authuser )  + String( authpass )
+    + String( (int) authentication ) + String( authuser ) + String( authpass )
+    + String( (int) tokenauth ) + String( token ) 
+    + String( (int) secpush ) + String( secpushtime ) 
     + String( mcpchannels ) + String( (int) silent )  + String( (int) gcsensor ) + String( (int) mq135sensor ) 
     + String( (int) bme280sensor ) + String( (int) ds18b20sensor ) + String( (int) mcp3008sensor ) + String( (int) debug ) 
     + String( (int) staticIP ) + ip2Str( ipaddr ) + ip2Str( gateway ) + ip2Str( subnet ) + ip2Str( dns1 ) + ip2Str( dns2 ) 
@@ -1328,25 +1733,57 @@ void metricsHandler() {
   webString += ",nodename=\"" + String( dnsname ) + "\"";
   webString += ",nodeplace=\"" + String( place ) + "\"";
   webString += "} 1\n";
+  // Authentification
+  bool authEnabled = ( authentication || tokenauth ) ? true : false;
+  String authType = ( authentication ) ? "BasicAuth" : "";
+  if( authentication && tokenauth ) authType += " & ";
+  authType += ( tokenauth ) ? "TokenAuth" : "";
+  webString += "# HELP esp_device_auth En or Disabled authentification\n";
+  webString += "# TYPE esp_device_auth gauge\n";
+  webString += "esp_device_auth{";
+  webString += "authtype=\"" + authType + "\"";
+  webString += "} " + String( (int) authEnabled ) + "\n";
+  // SecPush
+  webString += "# HELP esp_device_secpush 1 or 0 En or Disabled SecPush\n";
+  webString += "# TYPE esp_device_secpush gauge\n";
+  webString += "esp_device_secpush{";
+  webString += "secpushstate=\"" + String( (int) secpushstate ) + "\"";
+  webString += ",secpushtime=\"" + String( (int) secpushtime ) + "\"";
+  webString += "} " + String( (int) secpush ) + "\n";
+  // WiFi RSSI 
   String wifiRSSI = String( WiFi.RSSI() );
   webString += "# HELP esp_wifi_rssi Wifi Signal Level in dBm\n";
   webString += "# TYPE esp_wifi_rssi gauge\n";
   webString += "esp_wifi_rssi " + wifiRSSI.substring( 1 ) + "\n";
+  // SRAM
+  webString += "# HELP esp_device_sram SRAM State\n";
+  webString += "# TYPE esp_device_sram gauge\n";
+  webString += "esp_device_sram{";
+  webString += "size=\"" + String( ESP.getFlashChipRealSize() ) + "\"";
+  webString += ",id=\"" + String( ESP.getFlashChipId() ) + "\"";
+  webString += ",speed=\"" + String( ESP.getFlashChipSpeed() ) + "\"";
+  webString += ",mode=\"" + String( ESP.getFlashChipMode() ) + "\"";
+  webString += "} " + String( ESP.getFlashChipSize() ) + "\n";
+  // DHCP or static IP
   webString += "# HELP esp_device_dhcp Network configured by DHCP\n";
   webString += "# TYPE esp_device_dhcp gauge\n";
+  //// ip in info
   webString += "esp_device_dhcp ";
   webString += staticIP ? "0" : "1";
   webString += "\n";
+  // silent mode
   webString += "# HELP esp_device_silent Silent Mode enabled = 1 or disabled = 0\n";
   webString += "# TYPE esp_device_silent gauge\n";
   webString += "esp_device_silent ";
   webString += silent ? "1" : "0";
   webString += "\n";
+  // debug mode
   webString += "# HELP esp_device_debug Debug Mode enabled = 1 or disabled = 0\n";
   webString += "# TYPE esp_device_debug gauge\n";
   webString += "esp_device_debug ";
   webString += debug ? "1" : "0";
   webString += "\n";
+  // eeprom info
   webString += "# HELP esp_device_eeprom_size Size of EEPROM in byte\n";
   webString += "# TYPE esp_device_eeprom_size gauge\n";
   webString += "esp_device_eeprom_size " + String( eepromSize ) + "\n";
@@ -1356,11 +1793,13 @@ void metricsHandler() {
   webString += "# HELP esp_device_eeprom_free Size of available/free EEPROM in byte\n";
   webString += "# TYPE esp_device_eeprom_free gauge\n"; // 284
   webString += "esp_device_eeprom_free " + String( ( eepromSize - configSize ) ) + "\n";
+  // device uptime
   webString += "# HELP esp_device_uptime Uptime of the Device in Secondes \n";
   webString += "# TYPE esp_device_uptime counter\n";
   webString += "esp_device_uptime ";
   webString += millis() / 1000;
   webString += "\n";
+  // checksum
   webString += "# HELP esp_mode_checksum Checksum validation: 1 = valid, 0 = invalid (need to run Setup again)\n";
   webString += "# TYPE esp_mode_checksum gauge\n";
   webString += "esp_mode_checksum ";
@@ -1433,8 +1872,13 @@ void setup() {
 
   if( debug ) {
     Serial.begin(115200);
+    while( ! Serial );
     Serial.println( "" );
-    Serial.println( "esp8266 node startup" );
+    Serial.println( ",----------------------." );
+    Serial.println( "| esp8266 node startup |" );
+    Serial.println( "`----------------------´" );
+    Serial.print( "Starting Device: " );
+    Serial.println( dnsname );
   }
   
   // start Wifi mode depending on Load Config (no valid config = start in AP Mode)
@@ -1467,7 +1911,7 @@ void setup() {
       delay( 200 );
       if( debug ) { Serial.print( "." ); }
     }
-    delay(200);
+//    delay(200);
     if( debug ) { Serial.println( " ok" ); }
     // get the local ip adress
     ip = WiFi.localIP().toString();
@@ -1490,24 +1934,24 @@ void setup() {
     IPAddress lgw(192,168,4,1);
     IPAddress lsub(255,255,255,0);
     WiFi.softAPConfig( lip, lgw, lsub );
-    delay( 500 );
+    delay( 50 );
     
     // start in AP mode, without Password
     String appString = String( dnsname ) + "_setup";
     char apname[ eepromStringSize ];
     appString.toCharArray(apname, eepromStringSize);
     SoftAccOK = WiFi.softAP( apname, "" );
-    delay( 500 );
+    delay( 50 );
     if( SoftAccOK ) {
 //    while( WiFi.status() != WL_CONNECTED ) {
       digitalWrite(LED_BUILTIN, LOW);
       delay( 200 );
       digitalWrite(LED_BUILTIN, HIGH);
-      delay( 400);
+      delay( 300);
       digitalWrite(LED_BUILTIN, LOW);
       delay( 200 );
       digitalWrite(LED_BUILTIN, HIGH);
-      delay( 400);
+      delay( 300);
       digitalWrite(LED_BUILTIN, LOW);
       delay( 200 );
       digitalWrite(LED_BUILTIN, HIGH);
@@ -1515,7 +1959,7 @@ void setup() {
     } else {
       if( debug ) { Serial.println( "failed" ); }
     }
-    delay(500);
+    //delay(500);
     ip = WiFi.softAPIP().toString();
     
     /* Setup the DNS server redirecting all the domains to the apIP */
@@ -1530,29 +1974,35 @@ void setup() {
         Serial.println( "failed" );
       }
     }
-    delay(500);
+    delay(50);
     //WiFi.softAPdisconnect(); // disconnect all previous clients
 //    SoftAccOK = true;
 //    captiveCall = false;
   }
-  
+
   if( gcsensor ) {
     if( debug ) {
       Serial.println( "Geigercounter unable to initialise in debuge Mode!" );
     } else {
       // initialise serial connection to geigercounter
-      mySerial.begin(9600); //Set up Software Serial Port
+      Serial.println( "Initialise Geigercounter Serial connection" );
+      mySerial.begin(9600);
     }
   }
 
   if( mq135sensor ) {
+    if( debug ) Serial.println( "initialize MQ135 Analog Sensor" );
     MQ135.inicializar();
     MQ135.setVoltResolution( 5 );
   } else {
+//    need resistors connectec between gnd - 220kΩ - ADC (A0) - 1000k - VCC (5V) 
+//    https://www.letscontrolit.com/forum/viewtopic.php?p=7832&sid=105badced9150691d2b42bcc5f525dc0#p7832    
 //    ADC_MODE(ADC_VCC);
+//    ADC_VCC compiler replace this
   }
 
   if( bme280sensor ) {
+    if( debug ) Serial.println( "initialize BME280 Sensor" );
     // Wire connection for bme Sensor
     Wire.begin();
     BMEstatus = bme.begin();  
@@ -1561,52 +2011,65 @@ void setup() {
 
   if( ds18b20sensor ) {
     // Initialize the ds18b20 Sensors
+    if( debug ) Serial.println( "initialize DS18B20 Sensor" );
     DS18B20.begin();
     // Set Precision
     for( int i = 0; i < tempCount; i++ ) {
-      DS18B20.setResolution( tempAdd[i], TEMPERATURE_PRECISION );
-      delay(100);
+      DS18B20.setResolution( tempAdd[i], ds18pre );
+      delay(50);
     }
     // Get amount of devices
     tempCount = DS18B20.getDeviceCount();
+    if( debug ) { Serial.print( "  detected ds18b20 sensors: " ); Serial.println( String( tempCount ) ); }
   }
 
   if( mcp3008sensor ) {
+    if( debug ) Serial.println( "initialize MCP3008 ADC Device" );
     SPI.begin();
     SPI.setClockDivider( SPI_CLOCK_DIV8 );
-    pinMode( CS, OUTPUT );
-    digitalWrite( CS, HIGH );
+    pinMode( mcppin, OUTPUT );
+    digitalWrite( mcppin, HIGH );
   }
 
+  // secpush
+  if( secpush ) secpushstate = true;
+  
   // 404 Page
   server.onNotFound( notFoundHandler );
 
   // default, main page
-  server.on("/", handle_root );
+  server.on( "/", handle_root );
 
   // ios captive portal detection request
-  server.on("/hotspot-detect.html", captiveHandler );
+  server.on( "/hotspot-detect.html", captiveHandler );
 
   // android captive portal detection request
-  server.on("/generate_204", captiveHandler );
+  server.on( "/generate_204", captiveHandler );
 
-  // dummy favicon.ico
-  server.on("/favicon.ico", HTTP_GET, faviconHandler );
-
+  // dummy favicon handling
+  server.on( "/favicon.ico", HTTP_GET, faviconIcoHandler );
+  server.on( "/favicon.png", HTTP_GET, faviconPngHandler );
+  
   // simple wifi signal strength
-  server.on("/signal", HTTP_GET, signalHandler );
+  server.on( "/signal", HTTP_GET, signalHandler );
 
-  // form page
-  server.on("/setup", HTTP_GET, setupHandler );
+  // Network setup page & form target
+  server.on( "/network", HTTP_GET, networkSetupHandler );
+  server.on( "/networkform", HTTP_POST, networkFormHandler );
 
-  // form target 
-  server.on("/form", HTTP_POST, formHandler );
+  // Device setup page & form target
+  server.on( "/device", HTTP_GET, deviceSetupHandler );
+  server.on( "/deviceform", HTTP_POST, deviceFormHandler );
+
+  // Authentification page & form target
+  server.on( "/auth", HTTP_GET, authSetupHandler );
+  server.on( "/authform", HTTP_POST, authFormHandler );
 
   // restart page
-  server.on("/restart", HTTP_GET, restartHandler );
+  server.on( "/restart", HTTP_GET, restartHandler );
 
   // reset page
-  server.on("/reset", HTTP_GET, resetHandler );
+  server.on( "/reset", HTTP_GET, resetHandler );
 
   // metrics (simple prometheus ready metrics output)
   server.on( "/metrics", HTTP_GET, metricsHandler );
@@ -1617,7 +2080,9 @@ void setup() {
 //  });
 
   // Starting the Weberver
+  if( debug ) Serial.print( "Starting the Web-Server: " );
   server.begin();
+  if( debug ) { Serial.println( "done" ); Serial.println( "waiting for client connections" ); }
   
 } // end setup
 
@@ -1634,6 +2099,8 @@ void loop() {
 
   // handle http requests
   server.handleClient();
+
+  if( secpushstate ) secpushstate = securePush();
 
 }
 
