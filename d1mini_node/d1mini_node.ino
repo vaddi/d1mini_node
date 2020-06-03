@@ -2036,6 +2036,23 @@ void setup() {
     //MQ135.setVoltResolution( 5 );
     MQ135.setRegressionMethod(1);
     MQ135.init();
+    if( debug ) Serial.print("Calibrating please wait.");
+    float calcR0 = 0;
+    for(int i = 1; i<=10; i ++) {
+      MQ135.update(); // Update data, the arduino will be read the voltage on the analog pin
+      calcR0 += MQ135.calibrate( RatioMQ135CleanAir );
+      if( debug ) Serial.print(".");
+    }
+    MQ135.setR0(calcR0/10);
+    if( debug ) Serial.println("  done!.");
+    if( isinf( calcR0 ) ) {
+      if( debug ) Serial.println("Warning: Conection issue founded, R0 is infite (Open circuit detected) please check your wiring and supply"); 
+      //while(1);
+    }
+    if( calcR0 == 0 ) {
+      if( debug ) Serial.println("Warning: Conection issue founded, R0 is zero (Analog pin with short circuit to ground) please check your wiring and supply");
+      //while(1);
+    }
   } else {
 //    need resistors connectec between gnd - 220kΩ - ADC (A0) - 1000k - VCC (5V) 
 //    https://www.letscontrolit.com/forum/viewtopic.php?p=7832&sid=105badced9150691d2b42bcc5f525dc0#p7832    
