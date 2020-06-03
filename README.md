@@ -105,12 +105,22 @@ When no connection to the Node come up:
 - On D1mini Boards you can enable `debug` and plugin via USB. Then read the Debug output by Arduino IDE Serial or via Terminal by `screen /dev/ttyUSB1 9600`.  
 
 
-### BME280 Adress ###
+### BME280 Adress Problem ###
 
 If the BME280 Sensor dont show any Data:
 
-1. Checkout from the `Examples` -> `Adafruit BME280 Library` -> `bme280_unified` Sketch. 
-2. If there continuesly printed `Could not find a valid BME280 sensor, check wiring`, you have to check the used Adress inside the Library. Open the file `libraries/Adafruit_BME280_Library/Adafruit_BME280.h` and change the used Adress round Line 33 from `#define BME280_ADDRESS        (0x77)` to `#define BME280_ADDRESS        (0x76) `. The `BME280_ADDRESS_ALTERNATE` doesn´t seem to work so properly.
+1. Checkout th Example from the Menu `File` -> `Examples` -> `Adafruit BME280 Library` -> `bme280_unified` Sketch. 
+2. If continuesly printed `Could not find a valid BME280 sensor, check wiring`, you have to check the used Adress inside the Library!  
+
+Open the file `libraries/Adafruit_BME280_Library/Adafruit_BME280.h` and change the used Adress around Line 33 from:
+
+	#define BME280_ADDRESS        (0x77)
+
+to 
+
+	#define BME280_ADDRESS        (0x76)
+
+The `BME280_ADDRESS_ALTERNATE` doesn´t seem to work so properly.
 
 
 
@@ -164,7 +174,7 @@ Devices and Cases:
 Some Basic Devices, only Temperature, Humidity and with the bme280 Sensor also Pressure. Beside the printed Cases (see [links](https://github.com/vaddi/d1mini_node#links) below).
 
 Bathroom Device:
-![devices](https://github.com/vaddi/d1mini_node/blob/master/assets/images/devices_bathroom.png "Bathroom Device" | width=200)  
+![devices](https://github.com/vaddi/d1mini_node/blob/master/assets/images/devices_bathroom.png "Bathroom Device")  
 A Node which get Metrics from my Bathroom. Here also with a printed case and a MQ135 behind.
 
 There are some More, just take a look into the [assets/images](https://github.com/vaddi/d1mini_node/blob/master/assets/images/) Folder.
@@ -215,5 +225,5 @@ Some Ideas which i want to implement in the future.
 
 [d1mini_node]: https://github.com/vaddi/d1mini_node/blob/master/d1mini_node/d1mini_node.ino
 [esp8266-01]: https://github.com/vaddi/d1mini_node/blob/master/esp8266-01/esp8266-01_node.ino
-[dashboard]: https://github.com/vaddi/d1mini_node/assets/dashboards/dashboard_full.json
-[dashboard-example]: https://github.com/vaddi/d1mini_node/assets/dashboards/dashboard_combined.json
+[dashboard]: https://github.com/vaddi/d1mini_node/blob/master/assets/dashboards/dashboard_full.json
+[dashboard-example]: https://github.com/vaddi/d1mini_node/blob/master/assets/dashboards/dashboard_combined.json
