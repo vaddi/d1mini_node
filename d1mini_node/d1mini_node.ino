@@ -6,7 +6,7 @@
   Install this Libraries to your Arduino IDE:
   - Adafruit Sensor Library (search for "Adafruit Unified Sensor")
   - Adafruit BME280 Library (search for "bme280")
-  - MQUnified Library (search for "mq135")
+  - MQUnified Library (search for "mq135") 1.9.9
   - OneWire Library ( search for "onewire")
   - DallasTemperature Library (search for "dallas")
 
@@ -156,15 +156,15 @@ bool ds18b20sensor              = false;  // enable/disable ds18b20 temperatur s
 bool mcp3008sensor              = false;  // enable/disable mcp3008 ADC. Used Pins Clock D5, MISO D6, MOSI D7, CS D8
 int  mcpchannels                = 0;      // Amount of visible MCP 300X Channels, MCP3008 = max 8, MCP3004 = max 4
 
-const char* history             = "4.0";  // Software Version
+const char* history             = "4.1";  // Software Version
 String      webString           = "";     // String to display
 String      ip                  = "127.0.0.1";  // default ip, will overwriten
 const int   eepromAddr          = 0;      // default eeprom Address
 const int   eepromSize          = 512;    // default eeprom size in kB (see datasheet of your device)
 const int   eepromchk           = 48;     // byte buffer for checksum
 char        lastcheck[ eepromchk ] = "";  // last created checksum
-int         configSize          = 0;
-String      currentRequest      = "";
+int         configSize          = 0;      // Configuration Size in kB
+String      currentRequest      = "";     // Value for the current request (used in debugOut)
 unsigned long previousMillis    = 0;      // flashing led timer value
 bool SoftAccOK                  = false;  // value for captvie portal function 
 bool captiveCall                = false;  // value to ensure we have a captive request
@@ -193,12 +193,13 @@ IPAddress dns2(4, 4, 8, 8);               // Second DNS
 String dnssearch;                         // DNS Search Domain
 
 // DNS server
-const byte DNS_PORT = 53;
-DNSServer dnsServer;
+const byte DNS_PORT = 53;                 // POrt of the DNS Server
+DNSServer dnsServer;                      // DNS Server port
 
+ESP8266WebServer server( port );          // Webserver port
 
 //
-// Edit Carefully after here
+// Edit careful after here
 //
 
 
@@ -215,13 +216,14 @@ SoftwareSerial mySerial( gcrx, gctx, false ); // RX Pin, TX Pin, inverse_output
 String cps             = "0.0";
 String cpm             = "0.0";
 String uSvh            = "0.0";
-String gcraw           = "";
+//String gcraw           = "";
 String gcmode          = "";
 int gcsize             = 0;
 int gcerror            = 0;
 int prc                = 0; // Parsing Counter
 int src                = 0; // Serial Read Counter
-String errorcodes[]    = { "no error", "empty serial data", "serial in use", "non numerical", "flipped values", "serial not available" };
+//                         0           1                 2                3                    4                5
+String errorcodes[]    = { "no error", "flipped values", "non numerical", "empty serial data", "serial in use", "serial not available" };
 boolean isNumber( String tString ) {
   String tBuf;
   boolean decPt = false;
@@ -242,10 +244,8 @@ String readGCSerial() {
   String data;
   if( mySerial.available() ) {
     delay(3); // time to fill buffer!
-    //mySerial.readBytesUntil( '\n', dataBuffer, 64 );
-    //data = dataBuffer;
+    gcerror = 0; // clear serial error
     return mySerial.readStringUntil('\n');
-    //return mySerial.read();
   } else {
     gcerror = 5; // serial not available
   }
@@ -255,17 +255,16 @@ String readGCSerial() {
 void parseGCData() {
   String data = "";
   src = 0;
-  if( debug ) { // ensure, serial is not in use!
-    gcerror = 2; // serial in use
+  if( debug ) { // ensure, serial is not in use by debug
+    gcerror = 4; // serial in use
   } else {
     while( data == "" ) {
       src += 1;
-      if( src > 2000 ) { // max read time in milli seconds
-        gcerror = 1; // empty serial data
+      if( src > 2000 ) { // max read tries
+        gcerror = 3; // empty serial data
         break; 
       }
       data = readGCSerial();
-      //delay( 1 );
     }
   }
   if( data != "" ) {
@@ -286,7 +285,7 @@ void parseGCData() {
     uSvh = data.substring(commaLocations[4] + 2, commaLocations[5]);
     gcsize = data.length();
     gcmode = data.substring(commaLocations[5] + 2, commaLocations[5] + 3);
-    gcraw = data;
+//    gcraw = data; // can contains non utf-8 characters, so use only for debug
   }
 }
 void readGC() {
@@ -296,23 +295,24 @@ void readGC() {
     if( prc > 100 ) break;
     parseGCData();
     prc += 1;
-    //delay(1);
   }
-  // validate the final result
-  if( ! isNumber( cps ) || ! isNumber( cpm ) || ! isNumber( uSvh ) ) {
-    if( cps > cpm ) {
-      gcerror = 4; // flipped values
-      String tmpCps = cps;
-      cps = cpm;
-      cpm = tmpCps;
-    } else {
-      gcerror = 3; // non numerical values
-      cps = "0.0";
-      cpm = "0.0";
-      uSvh = "0.0";
-    }
+  // validate the final result, we only want numeric values
+  if( isNumber( cps ) || isNumber( cpm ) || isNumber( uSvh ) ) {
+//    float tmpUSvh = uSvh.toFloat();
+//    float tmpCpm = cpm.toFloat();
+//    if( tmpUSvh > tmpCpm ) {
+//      gcerror = 1; // flipped numbers
+//      String tmpVar = cpm;
+//      cpm = uSvh;
+//      uSvh = tmpVar;
+//    } else {
+//      gcerror = 0; // reset error
+//    }
   } else {
-    gcerror = 0; // reset error
+    gcerror = 2; // non numerical values
+    cps = "0.0";
+    cpm = "0.0";
+    uSvh = "0.0";
   }
 }
 // Get formatet Geigercounterdata function
@@ -325,9 +325,9 @@ String getGCData() {
   result += "# TYPE esp_mogc_info gauge\n";
   result += "esp_mogc_info{";
   result += "mode=\"" + gcmode + "\"";
-//  result += ", size=\"" + String( gcsize ) + "\"";
-  gcraw = gcraw.substring( 0, gcraw.length() -1 );
-  result += ", raw=\"" + String( gcraw ) + "\"";
+//  // can contain non utf-8 characters, should only used for debug!  
+//  gcraw = gcraw.substring( 0, gcraw.length() -1 );
+//  result += ", raw=\"" + String( gcraw ) + "\""; 
   result += "} 1\n";
   result += "# HELP esp_mogc_error Geigercounter error code\n";
   result += "# TYPE esp_mogc_error gauge\n";
@@ -391,6 +391,9 @@ String getDS18B20Data() {
   result += "# HELP esp_ds18b20_parasite parasite status\n";
   result += "# TYPE esp_ds18b20_parasite gauge\n";
   result += "esp_ds18b20_parasite " + String( (int) DS18B20.isParasitePowerMode() ) + "\n";
+  result += "# HELP esp_ds18b20_precision Precision of ds18b20 devices\n";
+  result += "# TYPE esp_ds18b20_precision gauge\n";
+  result += "esp_ds18b20_precision " + String( ds18pre ) + "\n";
   result += "# HELP esp_ds18b20_runtime Time in milliseconds for read All DS 18B20 Sensors\n";
   result += "# TYPE esp_ds18b20_runtime gauge\n";
   result += "esp_ds18b20_runtime " + String( DS18B20Runtime ) + "\n";
@@ -491,7 +494,13 @@ String getMCPData() {
 // MQ135
 //
 #include <MQUnifiedsensor.h>
-#define mqtype 135 //MQ135
+//#define mqtype "MQ-135" //MQ135
+#define placa "Arduino UNO"
+#define Voltage_Resolution 5
+#define pin A0 //Analog input 0 of your arduino
+#define type "MQ-135" //MQ135
+#define ADC_Bit_Resolution 10 // For arduino UNO/MEGA/NANO
+#define RatioMQ135CleanAir 3.6//RS / R0 = 3.6 ppm 
 float         co              = 0.0;          // CO value
 float         alc             = 0.0;          // Alcohol value
 float         co2             = 0.0;          // CO2 value
@@ -501,19 +510,27 @@ float         ac              = 0.0;          // Acetone value
 float         mqvoltage       = 0.0;          // MQ Voltage value
 float         mqr             = 0.0;          // MQ R0 Resistor value
 //Declare Sensor
-MQUnifiedsensor MQ135(mqpin, mqtype); 
+//MQUnifiedsensor MQ135(mqpin, mqtype); 
+//MQUnifiedsensor MQ135("Arduino", 5.0, 10, A0, mqtype); 
+MQUnifiedsensor MQ135(placa, Voltage_Resolution, ADC_Bit_Resolution, pin, type);
 void setMQValues() {
   MQ135.update(); // Update data, the arduino will be read the voltage from the analog pin
-  MQ135.calibrate( false ); // calibrate the MQ Sensor
+  //MQ135.calibrate( false ); // calibrate the MQ Sensor
   //mqvoltage = ( (float) MQ135.getVoltage(false) * 10 ) - ( (float) ( ESP.getVcc() / 1024.0 / 10.0 ) );
   mqvoltage = (float) MQ135.getVoltage(false) * 10;
   mqr = MQ135.getR0(); // R0 Resistor value (indicator for calibration)
-  co  = MQ135.readSensor("CO"); // CO concentration
-  alc = MQ135.readSensor("Alcohol"); // Alcohole concentration
-  co2 = MQ135.readSensor("CO2"); // CO2 concentration
-  dmh = MQ135.readSensor("Tolueno"); // Diphenylmethane concentration
-  am  = MQ135.readSensor("NH4"); // NH4 (Ammonium) concentration
-  ac  = MQ135.readSensor("Acetona"); // Acetone concentration 
+  MQ135.setA(605.18); MQ135.setB(-3.937); // Configurate the ecuation values to get CO concentration
+  co  = MQ135.readSensor(); // CO concentration
+  MQ135.setA(77.255); MQ135.setB(-3.18); // Configurate the ecuation values to get Alcohol concentration
+  alc = MQ135.readSensor(); // Alcohole concentration
+  MQ135.setA(110.47); MQ135.setB(-2.862); // Configurate the ecuation values to get CO2 concentration
+  co2 = MQ135.readSensor(); // CO2 concentration
+  MQ135.setA(44.947); MQ135.setB(-3.445); // Configurate the ecuation values to get Tolueno concentration
+  dmh = MQ135.readSensor(); // Diphenylmethane concentration
+  MQ135.setA(102.2 ); MQ135.setB(-2.473); // Configurate the ecuation values to get NH4 concentration
+  am  = MQ135.readSensor(); // NH4 (Ammonium) concentration
+  MQ135.setA(34.668); MQ135.setB(-3.369); // Configurate the ecuation values to get Acetona concentration
+  ac  = MQ135.readSensor(); // Acetone concentration 
 }
 String getMQ135Data() {
   unsigned long currentMillis = millis();
@@ -577,13 +594,6 @@ String getMQ135Data() {
 //  //String getMoistureData() { return ""; } // dummy function
 //#endif
 
-
-
-
-
-
-// Instanciate webserver listener on given port
-ESP8266WebServer server( port );
 
 
 //
@@ -875,7 +885,7 @@ void authorisationHandler() {
           }
         }
         // token auth (only on Special pages)
-        if( currentRequest == "metrics" || currentRequest == "restart" || currentRequest == "reset" ) { // token auth only on sepecial pages
+        if( currentRequest == "metrics" ) { // token auth only on sepecial pages || currentRequest == "restart" || currentRequest == "reset"
           if( tokenauth && ! authenticated ) { // disable, if user authenticated allready by basic auth
             if( server.hasHeader( "X-Api-Key" ) ) {
               String apikey = server.header( "X-Api-Key" );
@@ -1027,13 +1037,21 @@ String htmlJS() {
   result += "    return result;\n";
   result += "  }\n";
   result += "  function generateToken( tokenFildId ) {\n";
-  result += "    tokenField = document.getElementById( tokenFildId );\n";
+  result += "    let tokenField = document.getElementById( tokenFildId );\n";
   result += "    if( tokenField.value == null || tokenField.value == undefined ) return;\n";
   result += "    if( tokenField.value != \"\" ) {\n";
   result += "      let confirmed = window.confirm('Reset current Token?')\n"; 
   result += "      if( confirmed ) tokenField.value = createToken( 16 );\n";
   result += "    } else {\n";
   result += "      tokenField.value = createToken( 16 );\n";
+  result += "    }\n";
+  result += "  }\n";
+  result += "  function toggleVisibility( pwFieldId ) {\n";
+  result += "    let pwField = document.getElementById( pwFieldId );\n";
+  result += "    if( pwField.type == 'text' ) {\n";
+  result += "      pwField.type = 'password';\n";
+  result += "    } else {\n";
+  result += "      pwField.type = 'text';\n";
   result += "    }\n";
   result += "  }\n";
   result += "  window.onload = function () {\n";
@@ -1167,17 +1185,22 @@ void handle_root() {
   result += "CO, CO2, Ammonium, Acetone and Diphenylmethane.</p>\n";
   result += "<h2>Links</h2>\n";
   result += "<table id='links'>\n";
-  if( tokenauth ) {
-    result += "  <tr><td><a href='/metrics?apikey=" + String( token ) + "'>/metrics</a></td>(Token: " + String( token ) + ")<td></td></tr>\n";
-  } else {
-    result += "  <tr><td><a href='/metrics'>/metrics</a></td><td></td></tr>\n";
-  }
+  result += "  <tr><td><a href='/metrics";
+  if( tokenauth ) { result += "?apikey=" + String( token ); }
+  result += "'>/metrics</a></td><td></td></tr>\n";
   result += "  <tr><td><a href='/network'>/network</a></td><td>(Network Setup)</td></tr>\n";
   result += "  <tr><td><a href='/device'>/device</a></td><td>(Device Setup)</td></tr>\n";
   result += "  <tr><td><a href='/auth'>/auth</a></td><td>(Authentification Setup)</td></tr>\n";
-  result += "  <tr><td><a href='/reset' onclick=\"return confirm('Reset the Device?');\">/reset</a></td><td>Simple reset</td></tr>\n";
-  result += "  <tr><td><a href='/restart' onclick=\"return confirm('Restart the Device?');\">/restart</a></td><td>Simple restart</td></tr>\n";
-  result += "  <tr><td><a href='/restart?reset=1' onclick=\"return confirm('Reset the Device to Factory Defaults?');\">/restart?reset=1</a></td><td>Factory-Reset*</td></tr>\n";
+  result += "  <tr><td><a href='/reset";
+  if( tokenauth ) { result += "?apikey=" + String( token ); }
+  result += "' onclick=\"return confirm('Reset the Device?');\">/reset</a></td><td>Simple reset</td></tr>\n";
+  result += "  <tr><td><a href='/restart";
+  if( tokenauth ) { result += "?apikey=" + String( token ); }
+  result += "' onclick=\"return confirm('Restart the Device?');\">/restart</a></td><td>Simple restart</td></tr>\n";
+  result += "  <tr><td><a href='/restart";
+  if( tokenauth ) { result += "?apikey=" + String( token ) + "&"; } 
+    else { result += "?"; }
+  result += "reset=1' onclick=\"return confirm('Reset the Device to Factory Defaults?');\">/restart?reset=1</a></td><td>Factory-Reset*</td></tr>\n";
   result += "</table>\n";
   result += "<p>* Clear EEPROM, will reboot in Setup (Wifi Acces Point) Mode named <strong>esp_setup</strong>!</p>";
   result += "<h2>Enabled Sensors</h2>\n";
@@ -1218,6 +1241,15 @@ void handle_root() {
     result += "</td></tr>\n";
   } else {
     result += "  <tr><td>Debug Mode</td><td>Disabled</td><td></td></tr>\n";
+  }
+  // Authentification
+  if( authentication ) {
+    result += "  <tr><td>Basic Auth</td><td>Enabled</td><td>&#128274;</td></tr>\n";
+  } else {
+    result += "  <tr><td>Basic Auth</td><td>Disabled</td><td>&#128275;</td></tr>\n";
+  }
+  if( tokenauth ) {
+    result += "  <tr><td>Token Auth</td><td>Enabled</td><td>&#128273; Token: " + String( token ) + "</td></tr>\n";
   }
   // SecPush
   if( secpush ) {
@@ -1462,7 +1494,9 @@ void networkFormHandler() {
   bool result = saveSettings();
   delay(50);
   // send user to restart page
-  server.sendHeader( "Location","/restart" );
+  String location = "/restart";
+  if( tokenauth ) { location += "?apikey=" + String( token ); }
+  server.sendHeader( "Location",location );
   server.send( 303 );
 }
 
@@ -1564,7 +1598,9 @@ void deviceFormHandler() {
   bool result = saveSettings();
   delay(50);
   // send user to restart page
-  server.sendHeader( "Location","/restart" );
+  String location = "/restart";
+  if( tokenauth ) { location += "?apikey=" + String( token ); }
+  server.sendHeader( "Location",location );
   server.send( 303 );
 }
 
@@ -1595,7 +1631,8 @@ void authSetupHandler() {
   result += "  </tr>\n";
   result += "  <tr class='authRow'>\n";
   result += "    <td><label for='authpass'>User Password: </label></td>\n";
-  result += "    <td><input id='authpass' name='authpass' type='password' placeholder='Password' value='" + String( authpass ) + "' size='" + String( eepromStringSize ) + "' /></td>\n";
+  result += "    <td><input id='authpass' name='authpass' type='password' placeholder='Password' value='" + String( authpass ) + "' size='" + String( eepromStringSize ) + "' />\n";
+  result += "    <button name='showpw' type='button' onclick='toggleVisibility( \"authpass\" )'>&#128065;</button></td>\n";
   result += "  </tr>\n";
   result += "  <tr><td>&nbsp;</td><td></td></tr>\n"; // dummy line
   result += "  <tr><td><strong>Token Authentication</strong></td><td></td></tr>\n"; // head line
@@ -1608,7 +1645,8 @@ void authSetupHandler() {
   result += "    <td><label for='token'>Token: </label></td>\n";
   result += "    <td>\n";
   result += "      <input id='token' name='token' type='password' placeholder='' value='" + String( token ) + "' size='" + String( eepromStringSize ) + "' /> \n";
-  result += "      <button name='genToken' type='button' onclick='generateToken( \"token\" )'>Generate Token</button>\n";
+  result += "      <button name='showtoken' type='button' onclick='toggleVisibility( \"token\" )'>&#128065;</button>";
+  result += "<button name='genToken' type='button' onclick='generateToken( \"token\" )'>Generate Token</button>\n";
   result += "    </td>\n";
   result += "  </tr>\n";
   result += "  <tr><td>&nbsp;</td><td></td></tr>\n"; // dummy line
@@ -1656,7 +1694,9 @@ void authFormHandler() {
   bool result = saveSettings();
   delay(50);
   // send user to restart page
-  server.sendHeader( "Location","/restart" );
+  String location = "/restart";
+  if( tokenauth ) { location += "?apikey=" + String( token ); }
+  server.sendHeader( "Location",location );
   server.send( 303 );
 }
 
@@ -1992,8 +2032,10 @@ void setup() {
 
   if( mq135sensor ) {
     if( debug ) Serial.println( "initialize MQ135 Analog Sensor" );
-    MQ135.inicializar();
-    MQ135.setVoltResolution( 5 );
+    //MQ135.inicializar();
+    //MQ135.setVoltResolution( 5 );
+    MQ135.setRegressionMethod(1);
+    MQ135.init();
   } else {
 //    need resistors connectec between gnd - 220kΩ - ADC (A0) - 1000k - VCC (5V) 
 //    https://www.letscontrolit.com/forum/viewtopic.php?p=7832&sid=105badced9150691d2b42bcc5f525dc0#p7832    
@@ -2006,7 +2048,7 @@ void setup() {
     // Wire connection for bme Sensor
     Wire.begin();
     BMEstatus = bme.begin();  
-    if (!BMEstatus) { while (1); }
+    //if (!BMEstatus) { while (1); }
   }
 
   if( ds18b20sensor ) {

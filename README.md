@@ -93,6 +93,7 @@ Open a Webbrowser and try to connect to your Node:
 Navigate through the Page, checkout the Metrics or Save some Settings.  
 
 
+
 ## Troubleshooting ##
 
 When no connection to the Node come up:
@@ -102,6 +103,14 @@ When no connection to the Node come up:
 - Try to disable Silent Mode to ensure the Node will connect to the Wifi and doesnt run in Setup Mode (LED blinks 3 times). The Device will blink if a client connecting to the wifi and when processing a request.
 - Check Pins, make sure there are no shortcuits or other pin missplacements.
 - On D1mini Boards you can enable `debug` and plugin via USB. Then read the Debug output by Arduino IDE Serial or via Terminal by `screen /dev/ttyUSB1 9600`.  
+
+
+### BME280 Adress ###
+
+If the BME280 Sensor dont show any Data:
+
+1. Checkout from the `Examples` -> `Adafruit BME280 Library` -> `bme280_unified` Sketch. 
+2. If there continuesly printed `Could not find a valid BME280 sensor, check wiring`, you have to check the used Adress inside the Library. Open the file `libraries/Adafruit_BME280_Library/Adafruit_BME280.h` and change the used Adress round Line 33 from `#define BME280_ADDRESS        (0x77)` to `#define BME280_ADDRESS        (0x76) `. The `BME280_ADDRESS_ALTERNATE` doesn´t seem to work so properly.
 
 
 
@@ -126,6 +135,7 @@ Just add your device as a Target to your `prometheus.yml` File. I've using here 
       - targets: ['esp03.speedport.ip:80']
 ...
 ```
+
 
 ## Dashboards ##
 
