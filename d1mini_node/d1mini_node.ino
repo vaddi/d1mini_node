@@ -29,7 +29,7 @@
   -----------------
   VIN     | 5V
   GND     | GND
-  AO      | PIN A0 *
+  AO      | PIN A0/17 *
   * When A0 is used, accurate Voltage calculation will be disabled!
 
   Capacitive Soil Moisture Sensor (over mcp3008 port X)
@@ -42,7 +42,7 @@
   -----------------
   VIN     | 3,3V *
   GND     | GND
-  Data    | PIN D3 *
+  Data    | PIN D3/4 *
   * Wiring a 4,7kΩ Resistor between VIN and Data!
 
   Geigercounter | D1 Mini (Serial)
@@ -58,10 +58,10 @@
   -------------------
   VIN     | 3,3V
   GND     | GND
-  Clock   | D5
-  Dout    | D6
-  Din     | D7
-  CS      | D8
+  Clock   | D5/14
+  Dout    | D6/12
+  Din     | D7/13
+  CS      | D8/15
 
   #
   # Usefull links
@@ -131,19 +131,18 @@ const byte mqpin    = A0; // MQ135 Sensor (Analog)
 const byte mcppin   = D8; // MCP3008 ADC (D7,D6,D5 will also be used for SPI but doesnt neet do defined)
 // DS18B20 Sensorpin & Precision
 const byte onewire  = D3; // OneWire Pin for ds18b20 Sensors
-const byte ds18pre  = 10; // Define precision in bit: 9, 10, 11, 12. Will result in 9=0,5°C, 10=0,25°C, 11=0,125°C 
-                          // (keep in mind: higher values will remain in longer read times!)
-
+const int  defpre   = 16;  // Maximum Precision
 
 //
 // Default settings
 //
 
 // setup your default wifi ssid, passwd and dns stuff. Can overwriten also later from setup website
-const int eepromStringSize      = 24;     // maximal byte size for strings (ssid, wifi-password, dnsname)
+const int eepromStringSize      = 24;     // maximal byte size for strings (ssid, dnsname, etc.)
+const int eepromPassStringSize  = 64;     // special size for long wifi-password, http-password and http-token
 
 char ssid[eepromStringSize]     = "";     // wifi SSID name
-char password[eepromStringSize] = "";     // wifi wpa2 password
+char password[eepromPassStringSize] = ""; // wifi wpa2 password
 char dnsname[eepromStringSize]  = "esp";  // Uniq Networkname
 char place[eepromStringSize]    = "";     // Place of the Device
 int  port                       = 80;     // Webserver port (default 80)
@@ -151,12 +150,16 @@ bool silent                     = false;  // enable/disable silent mode
 bool debug                      = true;   // enable/disable debug mode (should be enabled on first boot)
 bool gcsensor                   = false;  // enable/disable mightyohm geigercounter (unplug to flash!)
 bool mq135sensor                = false;  // enable/disable mq-sensor. They use Pin A0 and will disable the accurate vcc messuring
+int  mqpre                      = 5;      // Precision for the MQ Sensor
 bool bme280sensor               = false;  // enable/disable bme280 (on address 0x76). They use Pin 5 (SCL) and Pin 4 (SDA) for i2c
+int  bmepre                     = 3;      // Precision for the BME Sensor
 bool ds18b20sensor              = false;  // enable/disable ds18b20 temperatur sensors. They use Pin D3 as default for OneWire
+const byte ds18pre              = 10;     // Define precision in bit: 9, 10, 11, 12. Will result in 9=0,5°C, 10=0,25°C, 11=0,125°C
+                                          // * (keep in mind: higher values will remain in longer read times!)
 bool mcp3008sensor              = false;  // enable/disable mcp3008 ADC. Used Pins Clock D5, MISO D6, MOSI D7, CS D8
 int  mcpchannels                = 0;      // Amount of visible MCP 300X Channels, MCP3008 = max 8, MCP3004 = max 4
-
-const char* history             = "4.1";  // Software Version
+int  mcppre                     = 0;      // Precision for the MCP ADC Values
+const char* history             = "4.3";  // Software Version
 String      webString           = "";     // String to display
 String      ip                  = "127.0.0.1";  // default ip, will overwriten
 const int   eepromAddr          = 0;      // default eeprom Address
@@ -172,14 +175,14 @@ bool captiveCall                = false;  // value to ensure we have a captive r
 // basic auth 
 bool authentication             = false;  // enable/disable Basic Authentication
 char authuser[eepromStringSize] = "";     // user name
-char authpass[eepromStringSize] = "";     // user password
+char authpass[eepromPassStringSize] = "";     // user password
 
 // token auth
-bool tokenauth                    = false;// enable/disable Tokenbased Authentication
-char token[eepromStringSize]      = "";   // The token variable
+bool tokenauth                  = false;  // enable/disable Tokenbased Authentication
+char token[eepromPassStringSize]    = "";     // The token variable
 
 // Secpush
-bool secpush                    = false;  // enable/disable secpush (turn off auth after boot for n seconds)
+bool secpush                    = true;   // enable/disable secpush (turn off auth after boot for n seconds)
 int  secpushtime                = 300;    // default secpush time in Seconds
 bool secpushstate               = false;  // current secpush state (false after event has trigger)
 
@@ -298,16 +301,16 @@ void readGC() {
   }
   // validate the final result, we only want numeric values
   if( isNumber( cps ) || isNumber( cpm ) || isNumber( uSvh ) ) {
-//    float tmpUSvh = uSvh.toFloat();
-//    float tmpCpm = cpm.toFloat();
-//    if( tmpUSvh > tmpCpm ) {
-//      gcerror = 1; // flipped numbers
-//      String tmpVar = cpm;
-//      cpm = uSvh;
-//      uSvh = tmpVar;
-//    } else {
-//      gcerror = 0; // reset error
-//    }
+    float tmpUSvh = uSvh.toFloat();
+    float tmpCpm = cpm.toFloat();
+    if( tmpUSvh > tmpCpm ) {
+      gcerror = 1; // flipped numbers
+      String tmpVar = cpm;
+      cpm = uSvh;
+      uSvh = tmpVar;
+    } else {
+      gcerror = 0; // reset error
+    }
   } else {
     gcerror = 2; // non numerical values
     cps = "0.0";
@@ -317,9 +320,9 @@ void readGC() {
 }
 // Get formatet Geigercounterdata function
 String getGCData() {
-  unsigned long currentMillis = millis();
+  unsigned long gccurrentMillis = millis();
   readGC();
-  long GCRuntime = millis() - currentMillis;
+  unsigned long GCRuntime = millis() - gccurrentMillis;
   String result = "";
   result += "# HELP esp_mogc_info Geigercounter current read mode\n";
   result += "# TYPE esp_mogc_info gauge\n";
@@ -370,10 +373,19 @@ DallasTemperature DS18B20(&oneWire);
 DeviceAddress tempAdd[0];                     // DS18B20 Address Array
 int           tempCount       = 0;            // DS18b20 Arraysize value
 String getDS18B20Data() {
-  unsigned long currentMillis = millis();
+  unsigned long dscurrentMillis = millis();
   DS18B20.requestTemperatures();
-  long DS18B20Runtime = millis() - currentMillis;
+  unsigned long DS18B20Runtime = millis() - dscurrentMillis;
   String result = "";
+  result += "# HELP esp_ds18b20_amount Current active ds18b20 Sensors\n";
+  result += "# TYPE esp_ds18b20_amount gauge\n";
+  result += "esp_ds18b20_amount " + String( tempCount ) + "\n";
+  result += "# HELP esp_ds18b20_parasite parasite status\n";
+  result += "# TYPE esp_ds18b20_parasite gauge\n";
+  result += "esp_ds18b20_parasite " + String( (int) DS18B20.isParasitePowerMode() ) + "\n";
+  result += "# HELP esp_ds18b20_precision Precision of ds18b20 devices\n";
+  result += "# TYPE esp_ds18b20_precision gauge\n";
+  result += "esp_ds18b20_precision " + String( ds18pre ) + "\n";
   result += "# HELP esp_ds18b20 Current ds18b20 Temperatures and Addresses (deviceIds will updated on each restart!)\n";
   result += "# TYPE esp_ds18b20 gauge\n";
   if( tempCount > 0 ) {
@@ -385,15 +397,6 @@ String getDS18B20Data() {
   } else {
     result += "esp_ds18b20{device=\"99\",deviceId=\"0000000000000000\"} 0.0\n";
   }
-  result += "# HELP esp_ds18b20_amount Current active ds18b20 Sensors\n";
-  result += "# TYPE esp_ds18b20_amount gauge\n";
-  result += "esp_ds18b20_amount " + String( tempCount ) + "\n";   
-  result += "# HELP esp_ds18b20_parasite parasite status\n";
-  result += "# TYPE esp_ds18b20_parasite gauge\n";
-  result += "esp_ds18b20_parasite " + String( (int) DS18B20.isParasitePowerMode() ) + "\n";
-  result += "# HELP esp_ds18b20_precision Precision of ds18b20 devices\n";
-  result += "# TYPE esp_ds18b20_precision gauge\n";
-  result += "esp_ds18b20_precision " + String( ds18pre ) + "\n";
   result += "# HELP esp_ds18b20_runtime Time in milliseconds for read All DS 18B20 Sensors\n";
   result += "# TYPE esp_ds18b20_runtime gauge\n";
   result += "esp_ds18b20_runtime " + String( DS18B20Runtime ) + "\n";
@@ -410,36 +413,41 @@ String getDS18B20Data() {
 // Create bme Instance (by i2c address 0x77 and 0x76)
 Adafruit_BME280 bme;
 unsigned      BMEstatus;
-float         temp            = 0.0;          // temperature value 
-float         pres            = 0.0;          // pressure value
-float         alt             = 0.0;          // altitude calculated by sealevel pressure
-float         hum             = 0.0;          // humidy value
+float         temp[ defpre ]; // temperature value
+float         pres[ defpre ]; // pressure value
+float         alt[ defpre ];  // altitude calculated by sealevel pressure
+float         hum[ defpre ];  // humidy value
 void setBMEValues() {
-  temp = bme.readTemperature();
-  pres = bme.readPressure() / 100.0F;
-  alt = bme.readAltitude(SEALEVELPRESSURE_HPA);
-  hum = bme.readHumidity();
+  floatArr( temp, bme.readTemperature() );
+  floatArr( pres, ( bme.readPressure() / 100.0F ) );
+  floatArr( alt, bme.readAltitude( SEALEVELPRESSURE_HPA ) );
+  floatArr( hum, bme.readHumidity() );
+  //delay(2);
 }
 String getBME280Data() {
-  unsigned long currentMillis = millis();
+  unsigned long bmecurrentMillis = millis();
   setBMEValues();
-  long BMERuntime = millis() - currentMillis;
+  long BMERuntime = millis() - bmecurrentMillis;
   String result = "";
   result += "# HELP esp_bme_status bme280 onload status, 1 = starting ok, Sensor available after boot\n";
   result += "# TYPE esp_bme_status gauge\n";
   result += "esp_bme_status " + String( BMEstatus ) + "\n";
+  result += "# HELP esp_bme_precision Precision of BME280 Sensor Data\n";
+  result += "# TYPE esp_bme_precision gauge\n";
+  result += "esp_bme_precision " + String( bmepre ) + "\n";
   result += "# HELP esp_bme_temperature Current BME280 Temperature\n";
   result += "# TYPE esp_bme_temperature gauge\n";
-  result += "esp_bme_temperature " + String( temp ) + "\n";
+  result += "esp_bme_temperature{filled=\"" + String( findFirstZero( temp ) ) + "\",current=\"" + String( ( sizeof( temp ) / sizeof( byte ) ) ) + "\"} " + String( arrAvg( temp ) ) + "\n";
+  printArr( temp );
   result += "# HELP esp_bme_humidity Current BME280 Humidity\n";
   result += "# TYPE esp_bme_humidity gauge\n";
-  result += "esp_bme_humidity " + String( hum ) + "\n";
+  result += "esp_bme_humidity{filled=\"" + String( findFirstZero( hum ) ) + "\"} " + String( arrAvg( hum ) ) + "\n";
   result += "# HELP esp_bme_pressure Current bme280 pressure\n";
   result += "# TYPE esp_bme_pressure gauge\n";
-  result += "esp_bme_pressure " + String( pres ) + "\n";
+  result += "esp_bme_pressure{filled=\"" + String( findFirstZero( pres ) ) + "\"} " + String( arrAvg( pres ) ) + "\n";
   result += "# HELP esp_bme_altitude Current bme280 altitude, calculated by sealevel pressure\n";
   result += "# TYPE esp_bme_altitude gauge\n";
-  result += "esp_bme_altitude " + String( alt ) + "\n";
+  result += "esp_bme_altitude{filled=\"" + String( findFirstZero( alt ) ) + "\"} " + String( arrAvg( alt ) ) + "\n";
   result += "# HELP esp_bme_runtime Time in milliseconds to read Date from the BME280 Sensor\n";
   result += "# TYPE esp_bme_runtime gauge\n";
   result += "esp_bme_runtime " + String( BMERuntime ) + "\n";
@@ -461,25 +469,37 @@ uint16_t mcp3008_read(uint8_t channel) {
 }
 void readMCPData() {
   for( size_t i = 0; i < mcpchannels; ++i ) {
-    channelData[ i ] = mcp3008_read( i );
+    // avg precision?
+    uint16_t total = 0;
+    for( size_t j = 0; j < mcppre; ++j ) {
+      total += mcp3008_read( i );
+    }
+    channelData[ i ] = total / mcppre;
+    //channelData[ i ] = mcp3008_read( i );
   }
 }
 String getMCPData() {
-  unsigned long currentMillis = millis();
+  unsigned long mcpcurrentMillis = millis();
   readMCPData();
   delay(4); // minimum read time in millis
-  long MCPRuntime = millis() - currentMillis;
+  unsigned long MCPRuntime = millis() - mcpcurrentMillis;
   String result = "";
   result += "# HELP esp_mcp_info MCP3008 Information\n";
   result += "# TYPE esp_mcp_info gauge\n";
   result += "esp_mcp_info{";
   result += "channels=\"" + String( mcpchannels ) + "\"";
+  //result += ",precission=\"" + String( mcppre ) + "\"";
   result += "} 1\n";
+  result += "# HELP esp_mpc_precision Precision of MCP 300X Data\n";
+  result += "# TYPE esp_mpc_precision gauge\n";
+  result += "esp_mpc_precision " + String( mcppre ) + "\n";
   result += "# HELP esp_mcp_data MCP Data\n";
   result += "# TYPE esp_mcp_data gauge\n";
   if( mcpchannels > 0 ) {
     for( size_t i = 0; i < mcpchannels; ++i ) {
+      //result += "esp_mcp_data{device=\"" + String( i ) + "\",precission=\"" + String( mcppre ) + "\",filled=\"" + String( findFirstZero( temp ) ) + "\"} " + String( channelData[ i ] ) + "\n";
       result += "esp_mcp_data{device=\"" + String( i ) + "\"} " + String( channelData[ i ] ) + "\n";
+      //result += "esp_mcp_data{device=\"" + String( i ) + "\"} " + String( channelData[ i ] ) + "\n";
     }
   } else {
     result += "esp_mcp_data{device=\"99\"} 0\n";
@@ -494,73 +514,99 @@ String getMCPData() {
 // MQ135
 //
 #include <MQUnifiedsensor.h>
-//#define mqtype "MQ-135" //MQ135
 #define placa "Arduino UNO"
 #define Voltage_Resolution 5
-#define pin A0 //Analog input 0 of your arduino
-#define type "MQ-135" //MQ135
-#define ADC_Bit_Resolution 10 // For arduino UNO/MEGA/NANO
-#define RatioMQ135CleanAir 3.6//RS / R0 = 3.6 ppm 
-float         co              = 0.0;          // CO value
-float         alc             = 0.0;          // Alcohol value
-float         co2             = 0.0;          // CO2 value
-float         dmh             = 0.0;          // Diphenylmethane value
-float         am              = 0.0;          // Ammonium value
-float         ac              = 0.0;          // Acetone value
-float         mqvoltage       = 0.0;          // MQ Voltage value
-float         mqr             = 0.0;          // MQ R0 Resistor value
+//#define pin A0                  //Analog input 0 of your arduino
+#define type "MQ-2"           // Type - MQ135/MQ-2
+#define ADC_Bit_Resolution 10   // For arduino UNO/MEGA/NANO
+#define RatioMQ2CleanAir 9.83  //RS / R0 = 3.6 ppm/9.83
+float         co[ defpre ];     // CO value
+//float         alc[ defpre ];    // Alcohol value
+//float         co2[ defpre ];    // CO2 value
+//float         dmh[ defpre ];    // Diphenylmethane value
+//float         am[ defpre ];     // Ammonium value
+//float         ac[ defpre ];     // Acetone value
+float         mqvoltage = 0.0;  // MQ Voltage value
+float         mqr       = 0.0;  // MQ R0 Resistor value
 //Declare Sensor
-//MQUnifiedsensor MQ135(mqpin, mqtype); 
-//MQUnifiedsensor MQ135("Arduino", 5.0, 10, A0, mqtype); 
-MQUnifiedsensor MQ135(placa, Voltage_Resolution, ADC_Bit_Resolution, pin, type);
+MQUnifiedsensor MQ2(placa, Voltage_Resolution, ADC_Bit_Resolution, mqpin, type);
 void setMQValues() {
-  MQ135.update(); // Update data, the arduino will be read the voltage from the analog pin
-  //MQ135.calibrate( false ); // calibrate the MQ Sensor
-  //mqvoltage = ( (float) MQ135.getVoltage(false) * 10 ) - ( (float) ( ESP.getVcc() / 1024.0 / 10.0 ) );
-  mqvoltage = (float) MQ135.getVoltage(false) * 10;
-  mqr = MQ135.getR0(); // R0 Resistor value (indicator for calibration)
-  MQ135.setA(605.18); MQ135.setB(-3.937); // Configurate the ecuation values to get CO concentration
-  co  = MQ135.readSensor(); // CO concentration
-  MQ135.setA(77.255); MQ135.setB(-3.18); // Configurate the ecuation values to get Alcohol concentration
-  alc = MQ135.readSensor(); // Alcohole concentration
-  MQ135.setA(110.47); MQ135.setB(-2.862); // Configurate the ecuation values to get CO2 concentration
-  co2 = MQ135.readSensor(); // CO2 concentration
-  MQ135.setA(44.947); MQ135.setB(-3.445); // Configurate the ecuation values to get Tolueno concentration
-  dmh = MQ135.readSensor(); // Diphenylmethane concentration
-  MQ135.setA(102.2 ); MQ135.setB(-2.473); // Configurate the ecuation values to get NH4 concentration
-  am  = MQ135.readSensor(); // NH4 (Ammonium) concentration
-  MQ135.setA(34.668); MQ135.setB(-3.369); // Configurate the ecuation values to get Acetona concentration
-  ac  = MQ135.readSensor(); // Acetone concentration 
+//  for( size_t j = 0; j < mqpre; ++j ) {
+//    MQ135setRegressionMethod.update(); // Update data, the arduino will be read the voltage from the analog pin
+    MQ2.setRegressionMethod(1);
+    //mqvoltage = ( (float) MQ135.getVoltage(false) * 10 ) - ( (float) ( ESP.getVcc() / 1024.0 / 10.0 ) );
+    //mqvoltage = (float) MQ135.getVoltage(false) * 10.0;
+    mqvoltage = (float) MQ2.getVoltage(false);
+    mqr = MQ2.getR0(); // R0 Resistor value (indicator for calibration)
+    // MQ-2
+    MQ2.setA(574.25); MQ2.setB(-2.222);
+    MQ2.setR0(9.659574468);
+    MQ2.update();
+    floatArr( co, MQ2.readSensor() );
+    // MQ-135
+//    MQ135.setA(605.18); MQ135.setB(-3.937); // Configurate the ecuation values to get CO concentration
+//    floatArr( co, MQ135.readSensor() );
+//    //co  = MQ135.readSensor(); // CO concentration
+//    MQ135.setA(77.255); MQ135.setB(-3.18); // Configurate the ecuation values to get Alcohol concentration
+//    floatArr( alc, MQ135.readSensor() );
+//    //alc = MQ135.readSensor(); // Alcohole concentration
+//    MQ135.setA(110.47); MQ135.setB(-2.862); // Configurate the ecuation values to get CO2 concentration
+//    floatArr( co2, MQ135.readSensor() );
+//    //co2 = MQ135.readSensor(); // CO2 concentration
+//    MQ135.setA(44.947); MQ135.setB(-3.445); // Configurate the ecuation values to get Tolueno concentration
+//    floatArr( dmh, MQ135.readSensor() );
+//    //dmh = MQ135.readSensor(); // Diphenylmethane concentration
+//    MQ135.setA(102.2 ); MQ135.setB(-2.473); // Configurate the ecuation values to get NH4 concentration
+//    floatArr( am, MQ135.readSensor() );
+//    //am  = MQ135.readSensor(); // NH4 (Ammonium) concentration
+//    MQ135.setA(34.668); MQ135.setB(-3.369); // Configurate the ecuation values to get Acetona concentration
+//    floatArr( ac, MQ135.readSensor() );
+    //ac  = MQ135.readSensor(); // Acetone concentration
+//    if( isnan( mqvoltage ) ) mqvoltage = 0.0;
+//    if( isnan( mqr ) ) mqr = 0.0;
+//    if( isnan( co ) ) co = 0.0;
+//    if( isnan( alc ) ) alc = 0.0;
+//    if( isnan( co2 ) ) co2 = 0.0;
+//    if( isnan( dmh ) ) dmh = 0.0;
+//    if( isnan( am ) ) am = 0.0;
+//    if( isnan( ac ) ) ac = 0.0;
+//  }
+  //delay(2);
 }
 String getMQ135Data() {
-  unsigned long currentMillis = millis();
+  unsigned long mqcurrentMillis = millis();
   setMQValues();
-  long MQRuntime = millis() - currentMillis;
+  long MQRuntime = millis() - mqcurrentMillis;
   String result = "";
+  //result += "{precission=\"" + String( co ) + "\"} " + String( findFirstZero( co ) ) + "\n";
   result += "# HELP esp_mq_voltage current Voltage metric\n";
   result += "# TYPE esp_mq_voltage gauge\n";
   result += "esp_mq_voltage " + String( mqvoltage ) + "\n";
   result += "# HELP esp_mq_resistor current R0 Resistor metric\n";
   result += "# TYPE esp_mq_resistor gauge\n";
   result += "esp_mq_resistor " + String( mqr ) + "\n";
+  result += "# HELP esp_mq_precision MQ Precision\n";
+  result += "# TYPE esp_mq_precision gauge\n";
+  result += "esp_mq_precision " + String( mqpre ) + "\n";
   result += "# HELP esp_mq_co Current MQ-135 CO Level\n";
   result += "# TYPE esp_mq_co gauge\n";
-  result += "esp_mq_co " + String( co ) + "\n";
-  result += "# HELP esp_mq_alc Current MQ-135 Alcohol Level\n";
-  result += "# TYPE esp_mq_alc gauge\n";
-  result += "esp_mq_alc " + String( alc ) + "\n";
-  result += "# HELP esp_mq_co2 Current MQ-135 CO2 Level\n";
-  result += "# TYPE esp_mq_co2 gauge\n";
-  result += "esp_mq_co2 " + String( co2 ) + "\n";
-  result += "# HELP esp_mq_dmh Current MQ-135 Diphenylmethane Level\n";
-  result += "# TYPE esp_mq_dmh gauge\n";
-  result += "esp_mq_dmh " + String( dmh ) + "\n";
-  result += "# HELP esp_mq_am Current MQ-135 Ammonium Level\n";
-  result += "# TYPE esp_mq_am gauge\n";
-  result += "esp_mq_am " + String( am ) + "\n";
-  result += "# HELP esp_mq_ac Current MQ-135 Acetone Level\n";
-  result += "# TYPE esp_mq_ac gauge\n";
-  result += "esp_mq_ac " + String( ac ) + "\n";
+  // {precission=\"" + String( co ) + "\"} " + String( findFirstZero( co ) ) + "
+  result += "esp_mq_co{filled=\"" + String( findFirstZero( co ) ) + "\"} " + String( arrAvg( co ) ) + "\n";
+//  result += "# HELP esp_mq_alc Current MQ-135 Alcohol Level\n";
+//  result += "# TYPE esp_mq_alc gauge\n";
+//  result += "esp_mq_alc{filled=\"" + String( findFirstZero( alc ) ) + "\"} " + String( arrAvg( alc ) ) + "\n";
+//  result += "# HELP esp_mq_co2 Current MQ-135 CO2 Level\n";
+//  result += "# TYPE esp_mq_co2 gauge\n";
+//  result += "esp_mq_co2{filled=\"" + String( findFirstZero( co2 ) ) + "\"} " + String( arrAvg( co2 ) ) + "\n";
+//  result += "# HELP esp_mq_dmh Current MQ-135 Diphenylmethane Level\n";
+//  result += "# TYPE esp_mq_dmh gauge\n";
+//  result += "esp_mq_dmh{filled=\"" + String( findFirstZero( dmh ) ) + "\"} " + String( arrAvg( dmh ) ) + "\n";
+//  result += "# HELP esp_mq_am Current MQ-135 Ammonium Level\n";
+//  result += "# TYPE esp_mq_am gauge\n";
+//  result += "esp_mq_am{filled=\"" + String( findFirstZero( am ) ) + "\"} " + String( arrAvg( am ) ) + "\n";
+//  result += "# HELP esp_mq_ac Current MQ-135 Acetone Level\n";
+//  result += "# TYPE esp_mq_ac gauge\n";
+//  result += "esp_mq_ac{filled=\"" + String( findFirstZero( ac ) ) + "\"} " + String( arrAvg( ac ) ) + "\n";
   result += "# HELP esp_mq_runtime Time in milliseconds to read Date from the MQ Sensor\n";
   result += "# TYPE esp_mq_runtime gauge\n";
   result += "esp_mq_runtime " + String( MQRuntime ) + "\n";
@@ -571,7 +617,6 @@ String getMQ135Data() {
 //// DEPRECATED, just use an mcp3008 and leave A0 as default for mq135 Sensor
 //// Capacitive Soil Moisture Sensore v1.0
 ////
-//#if CPSENSOR == true
 //  int         moisture  = 0;
 //  String getMoistureData() {
 //    unsigned long currentMillis = millis();
@@ -587,12 +632,6 @@ String getMQ135Data() {
 //    result += "esp_moisture_runtime " + String( MoistureRuntime ) + "\n";
 //    return result;
 //  }
-//#else
-//  // Enable Power Messuring (Voltage) only if no mq sensor is used
-//  ADC_MODE(ADC_VCC);
-//  //String getMQ135Data() { return ""; } // dummy function
-//  //String getMoistureData() { return ""; } // dummy function
-//#endif
 
 
 
@@ -617,7 +656,6 @@ void response( String& data, String requesttype ) { // , String addHeaders
 //  if( addHeaders != null || addHeaders != "" ) {
 //    server.sendHeader("Referrer-Policy","origin"); // Set aditional header data
 //    server.sendHeader("Access-Control-Allow-Origin", "*"); // allow 
-      server.sendHeader("Fishi", "Bread"); // allow 
 //  }
   server.send( 200, requesttype, data );
   delay(300);
@@ -630,6 +668,7 @@ void debugOut( String caller ) {
 //  callerUpper.toUpperCase();
 //  char callerFirst = callerUpper.charAt(0);
 //  caller = String( callerFirst ) + caller.substring(1,-1);
+//  Serial.println( caller );
   if( debug ) {
     Serial.println( " " ); // Add newline
     Serial.print( "* " );
@@ -650,7 +689,7 @@ bool loadSettings() {
   // define local data structure
   struct { 
     char eepromssid[ eepromStringSize ];
-    char eeprompassword[ eepromStringSize ];
+    char eeprompassword[ eepromPassStringSize ];
     char eepromdnsname[ eepromStringSize ];
     char eepromplace[ eepromStringSize ];
     bool eepromdebug          = false;
@@ -662,30 +701,33 @@ bool loadSettings() {
     IPAddress eepromdns2;
     bool eepromauthentication = false;
     char eepromauthuser[eepromStringSize];
-    char eepromauthpass[eepromStringSize];
+    char eepromauthpass[eepromPassStringSize];
     bool eepromtokenauth = false;
-    char eepromtoken[eepromStringSize];
+    char eepromtoken[eepromPassStringSize];
     bool eepromsecpush        = false;
     int  eepromsecpushtime    = 0;
     int  eeprommcpchannels    = 0;
     bool eepromsilent         = false;
     bool eepromgcsensor       = false;
     bool eeprommq135sensor    = false;
+    int  eeprommqpre          = 0;
     bool eeprombme280sensor   = false;
+    int  eeprombmepre         = 0;
     bool eepromds18b20sensor  = false;
     bool eeprommcp3008sensor  = false;
+    int  eeprommcppre         = 0;
     char eepromchecksum[ eepromchk ] = "";
   } data;
   // read data from eeprom
   EEPROM.get( eepromAddr, data );
   // validate checksum
-  String checksumString = sha1( String( data.eepromssid ) + String( data.eeprompassword ) + String( data.eepromdnsname ) + String( data.eepromplace ) 
-        + String( (int) data.eepromauthentication ) + String( data.eepromauthuser ) + String( data.eepromauthpass ) 
-        + String( (int) data.eepromtokenauth ) + String( data.eepromtoken ) 
-        + String( (int) data.eepromsecpush ) + String( data.eepromsecpushtime ) 
-        + String( data.eeprommcpchannels ) + String( (int) data.eepromsilent ) + String( (int) data.eepromgcsensor ) + String( (int) data.eeprommq135sensor ) 
-        + String( (int) data.eeprombme280sensor ) + String( (int) data.eepromds18b20sensor ) + String( (int) data.eeprommcp3008sensor ) + String( (int) data.eepromdebug ) 
-        + String( (int) data.eepromstaticIP ) + ip2Str( data.eepromipaddr ) + ip2Str( data.eepromgateway ) + ip2Str( data.eepromsubnet ) + ip2Str( data.eepromdns1 ) + ip2Str( data.eepromdns2 ) 
+  String checksumString = sha1( String( data.eepromssid ) + String( data.eeprompassword ) + String( data.eepromdnsname ) + String( data.eepromplace )
+        + String( (int) data.eepromauthentication ) + String( data.eepromauthuser ) + String( data.eepromauthpass )
+        + String( (int) data.eepromtokenauth ) + String( data.eepromtoken )
+        + String( (int) data.eepromsecpush ) + String( data.eepromsecpushtime )
+        + String( data.eeprommcpchannels ) + String( (int) data.eepromsilent ) + String( (int) data.eepromgcsensor ) + String( (int) data.eeprommq135sensor ) + String( data.eeprommqpre )
+        + String( (int) data.eeprombme280sensor ) + String( data.eeprombmepre ) + String( (int) data.eepromds18b20sensor ) + String( (int) data.eeprommcp3008sensor ) + String( data.eeprommcppre ) + String( (int) data.eepromdebug )
+        + String( (int) data.eepromstaticIP ) + ip2Str( data.eepromipaddr ) + ip2Str( data.eepromgateway ) + ip2Str( data.eepromsubnet ) + ip2Str( data.eepromdns1 ) + ip2Str( data.eepromdns2 )
         );
   char checksum[ eepromchk ];
   checksumString.toCharArray(checksum, eepromchk); // write checksumString into checksum
@@ -695,7 +737,7 @@ bool loadSettings() {
     configSize = sizeof( data );
     // re-set runtime variables;
     strncpy( ssid, data.eepromssid, eepromStringSize );
-    strncpy( password, data.eeprompassword, eepromStringSize );
+    strncpy( password, data.eeprompassword, eepromPassStringSize );
     strncpy( dnsname, data.eepromdnsname, eepromStringSize );
     strncpy( place, data.eepromplace, eepromStringSize );
     strncpy( checksum, data.eepromchecksum, eepromchk );
@@ -705,21 +747,24 @@ bool loadSettings() {
     gateway = data.eepromgateway;
     subnet = data.eepromsubnet;
     dns1 = data.eepromdns1;
-    dns2 = data.eepromdns1;
+    dns2 = data.eepromdns2;
     authentication = data.eepromauthentication;
     strncpy( authuser, data.eepromauthuser, eepromStringSize );
-    strncpy( authpass, data.eepromauthpass, eepromStringSize );
+    strncpy( authpass, data.eepromauthpass, eepromPassStringSize );
     tokenauth = data.eepromtokenauth;
-    strncpy( token, data.eepromtoken, eepromStringSize );
+    strncpy( token, data.eepromtoken, eepromPassStringSize );
     secpush = data.eepromsecpush;
     secpushtime = data.eepromsecpushtime;
     mcpchannels = data.eeprommcpchannels;
     silent = data.eepromsilent;
     gcsensor = data.eepromgcsensor;
     mq135sensor = data.eeprommq135sensor;
+    mqpre = data.eeprommqpre;
     bme280sensor = data.eeprombme280sensor;
+    bmepre = data.eeprombmepre;
     ds18b20sensor = data.eepromds18b20sensor;
     mcp3008sensor = data.eeprommcp3008sensor;
+    mcppre = data.eeprommcppre;
     return true;
   }
   if( debug ) Serial.println( "  failed checksum validation" );
@@ -732,7 +777,7 @@ bool saveSettings() {
   // define local data structure
   struct { 
     char eepromssid[ eepromStringSize ];
-    char eeprompassword[ eepromStringSize ];
+    char eeprompassword[ eepromPassStringSize ];
     char eepromdnsname[ eepromStringSize ];
     char eepromplace[ eepromStringSize ];
     bool eepromdebug          = false;
@@ -744,23 +789,26 @@ bool saveSettings() {
     IPAddress eepromdns2;
     bool eepromauthentication = false;
     char eepromauthuser[eepromStringSize];
-    char eepromauthpass[eepromStringSize];
+    char eepromauthpass[eepromPassStringSize];
     bool eepromtokenauth = false;
-    char eepromtoken[eepromStringSize];
+    char eepromtoken[eepromPassStringSize];
     bool eepromsecpush        = false;
     int  eepromsecpushtime    = 0;
     int  eeprommcpchannels    = 0;
     bool eepromsilent         = false;
     bool eepromgcsensor       = false;
     bool eeprommq135sensor    = false;
+    int  eeprommqpre          = 0;
     bool eeprombme280sensor   = false;
+    int  eeprombmepre         = 0;
     bool eepromds18b20sensor  = false;
     bool eeprommcp3008sensor  = false;
+    int  eeprommcppre         = 0;
     char eepromchecksum[ eepromchk ] = "";
   } data;
   // write real data into struct elements
   strncpy( data.eepromssid, ssid, eepromStringSize );
-  strncpy( data.eeprompassword, password, eepromStringSize );
+  strncpy( data.eeprompassword, password, eepromPassStringSize );
   strncpy( data.eepromdnsname, dnsname, eepromStringSize );
   strncpy( data.eepromplace, place, eepromStringSize );
   data.eepromdebug = debug;
@@ -772,26 +820,29 @@ bool saveSettings() {
   data.eepromdns2 = dns2;
   data.eepromauthentication = authentication;
   strncpy( data.eepromauthuser, authuser, eepromStringSize );
-  strncpy( data.eepromauthpass, authpass, eepromStringSize );
+  strncpy( data.eepromauthpass, authpass, eepromPassStringSize );
   data.eepromtokenauth = tokenauth;
-  strncpy( data.eepromtoken, token, eepromStringSize );
+  strncpy( data.eepromtoken, token, eepromPassStringSize );
   data.eepromsecpush = secpush;
   data.eepromsecpushtime = secpushtime;
   data.eeprommcpchannels = mcpchannels;
   data.eepromsilent = silent;
   data.eepromgcsensor = gcsensor;
   data.eeprommq135sensor = mq135sensor;
+  data.eeprommqpre = mqpre;
   data.eeprombme280sensor = bme280sensor;
+  data.eeprombmepre = bmepre;
   data.eepromds18b20sensor = ds18b20sensor;
   data.eeprommcp3008sensor = mcp3008sensor;
+  data.eeprommcppre = mcppre;
   // create new checksum
-  String checksumString = sha1( String( data.eepromssid ) + String( data.eeprompassword ) + String( data.eepromdnsname ) + String( data.eepromplace ) 
-        + String( (int) data.eepromauthentication ) + String( data.eepromauthuser )  + String( data.eepromauthpass ) 
-        + String( (int) data.eepromtokenauth ) + String( data.eepromtoken ) 
-        + String( (int) data.eepromsecpush ) + String( data.eepromsecpushtime ) 
-        + String( data.eeprommcpchannels ) + String( (int) data.eepromsilent )  + String( (int) data.eepromgcsensor ) + String( (int) data.eeprommq135sensor ) 
-        + String( (int) data.eeprombme280sensor ) + String( (int) data.eepromds18b20sensor ) + String( (int) data.eeprommcp3008sensor ) + String( (int) data.eepromdebug ) 
-        + String( (int) data.eepromstaticIP ) + ip2Str( data.eepromipaddr ) + ip2Str( data.eepromgateway ) + ip2Str( data.eepromsubnet ) + ip2Str( data.eepromdns1 ) + ip2Str( data.eepromdns2 ) 
+  String checksumString = sha1( String( data.eepromssid ) + String( data.eeprompassword ) + String( data.eepromdnsname ) + String( data.eepromplace )
+        + String( (int) data.eepromauthentication ) + String( data.eepromauthuser )  + String( data.eepromauthpass )
+        + String( (int) data.eepromtokenauth ) + String( data.eepromtoken )
+        + String( (int) data.eepromsecpush ) + String( data.eepromsecpushtime )
+        + String( data.eeprommcpchannels ) + String( (int) data.eepromsilent )  + String( (int) data.eepromgcsensor ) + String( (int) data.eeprommq135sensor ) + String( data.eeprommqpre )
+        + String( (int) data.eeprombme280sensor ) + String( data.eeprombmepre ) + String( (int) data.eepromds18b20sensor ) + String( (int) data.eeprommcp3008sensor ) + String( data.eeprommcppre ) + String( (int) data.eepromdebug )
+        + String( (int) data.eepromstaticIP ) + ip2Str( data.eepromipaddr ) + ip2Str( data.eepromgateway ) + ip2Str( data.eepromsubnet ) + ip2Str( data.eepromdns1 ) + ip2Str( data.eepromdns2 )
         );
   char checksum[ eepromchk ];
   checksumString.toCharArray(checksum, eepromchk);
@@ -799,7 +850,7 @@ bool saveSettings() {
   strncpy( lastcheck, checksum, eepromchk );
   if( debug ) { Serial.print( "  create new config checksum: " ); Serial.println( checksum ); }
   configSize = sizeof( data );
-  // save struct into eeprom
+  // save filed struct into eeprom
   EEPROM.put( eepromAddr,data );
   // commit transaction and return the write result state
   bool eepromCommit = EEPROM.commit();
@@ -810,7 +861,116 @@ bool saveSettings() {
   }
   return eepromCommit;
 }
-  
+
+// add value to array, until all fields are filled
+// then shift all values one step forward and add the given value to the end of the array
+void floatArr( float *arrData, float currentValue ) {
+  //int arrSize = ( sizeof( arrData ) / sizeof( float ) );
+  int arrSize = sizeof( arrData );
+  int firstZero = findFirstZero( arrData );
+  float tmpArr[ arrSize ];
+  initArr( tmpArr ); // fill tmpArr whith zero
+  if( firstZero >= arrSize ) {
+    if( arrData[ arrSize ] == 0 || arrData[ arrSize ] == 0.0 || arrData[ arrSize ] == 0.00 ) {
+      // Array not realy complete filled, missing last
+      for( size_t i = 0; i <= arrSize; ++i ) {
+        tmpArr[ i ] = arrData[ i ];
+      }
+      // Replace last nuller in array by Value
+      tmpArr[ firstZero ] = currentValue;
+    } else {
+      // Array is complete filled
+      for( size_t i = 0; i <= arrSize; ++i ) {
+        if( ( i + 1 ) <= arrSize ) {
+          tmpArr[i] = arrData[i + 1];
+        } else {
+          tmpArr[i] = currentValue;
+        }
+      }
+    }
+  } else {
+    // Array not complete filled
+    for( size_t i = 0; i <= arrSize; ++i ) {
+      tmpArr[ i ] = arrData[ i ];
+    }
+    // Replace last nuller in array by Value
+    tmpArr[ firstZero ] = currentValue;
+  }
+
+  // write all to destination array
+  for( size_t i = 0; i <= arrSize; ++i ) {
+    arrData[ i ] = tmpArr[ i ];
+  }
+}
+
+// get the fill amount of array by run forward (find first 0 value and return the position)
+int findFirstZero( float *arrData ) {
+  int arrSize = sizeof( arrData );
+  for( size_t i = 0; i <= arrSize; ++i ) {
+    if( ( arrData[ i ] == 0 || arrData[ i ] == 0.0 || arrData[ i ] == 0.00 ) && ( arrData[ i +1 ] == 0 || arrData[ i +1 ] == 0.0 || arrData[ i +1 ] == 0.00 ) ) return i;
+  }
+  return arrSize; // return possible maximun, the array size
+}
+
+// returns the average of array data
+float arrAvg( float *arrData ) {
+  float result = 0.00;
+  int arrSize = sizeof( arrData );
+  int firstZero = findFirstZero( arrData );
+  //if( firstZero < arrSize ) {
+  if( firstZero < arrSize ) {
+    // get avg only until reached first zero in array
+    for( size_t i = 0; i < firstZero; ++i ) {
+      result += arrData[ i ];
+    }
+    return result / firstZero;
+  } else {
+    for( size_t i = 0; i < arrSize; ++i ) {
+      result += arrData[ i ];
+    }
+    return result / arrSize;
+  }
+}
+
+// get last value
+float currentFromArr( float *arrData ) {
+  float result = 0.00;
+  int arrSize = sizeof( arrData );
+  int firstZero = findFirstZero( arrData );
+  if( firstZero == 0 ) {
+    result = arrData[ 0 ];
+  } else if( firstZero == arrSize ) {
+    if( arrData[ arrSize ] == 0 || arrData[ arrSize ] == 0.0 || arrData[ arrSize ] == 0.00 ) {
+      result = arrData[ arrSize -1 ];
+    } else {
+      result = arrData[ arrSize ];
+    }
+  } else {
+    result = arrData[ firstZero -1 ];
+  }
+  return result;
+}
+
+// fill all array fields by 0.00
+void initArr( float *arrData ) {
+  int arrSize = sizeof( arrData );
+  for( size_t i = 0; i <= arrSize; ++i ) {
+    arrData[ i ] = 0.00;
+  }
+}
+
+// serial print out a whole array
+void printArr( float *arrData ) {
+  if( debug ) {
+    int arrSize = sizeof( arrData );
+    for( size_t i = 0; i <= arrSize; ++i ) {
+      Serial.print( i );
+      Serial.print( " - " );
+      Serial.println( arrData[ i ] );
+    }
+  }
+}
+
 // is String an ip?
 bool isIp(String str) {
   for (size_t i = 0; i < str.length(); i++) {
@@ -850,7 +1010,6 @@ void parseBytes( const char* str, char sep, byte* bytes, int maxBytes, int base 
 bool securePush() {
   if( secpush && secpushstate ) {
     int tmpPushtime = ( secpushtime * 1000 );
-    //if( secpushstate && ( millis() - tmpPushtime > tmpPushtime ) ) {
     if( ( (int) secpushtime - ( ( millis() - secpushtime ) / 60 /60 ) ) <= 3 ) {
       secpushstate = false;
       return false;
@@ -942,7 +1101,7 @@ void authorisationHandler() {
 // spinner javascript
 String spinnerJS() {
   String result( ( char * ) 0 );
-  result.reserve( 440 );
+  result.reserve( 440 ); // reserve 440 characters of Space into result
   result += "<script type='text/javascript'>\n";
   result += "var duration = 300,\n";
   result += "    element,\n";
@@ -983,8 +1142,9 @@ String spinnerCSS() {
 String htmlJS() {
   String result( ( char * ) 0 );
   result.reserve( 2750 );
+  //String result = "";
   // javascript to poll wifi signal
-  if( ! captiveCall ) { // deactivate if in setup mode (Captive Portal enabled)
+  if( ! captiveCall && currentRequest == "/" ) { // deactivate if in setup mode (Captive Portal enabled)
     result += "window.setInterval( function() {\n"; // polling event to get wifi signal strength
     result += "  let xmlHttp = new XMLHttpRequest();\n";
     result += "  xmlHttp.open( 'GET', '/signal', false );\n";
@@ -994,75 +1154,88 @@ String htmlJS() {
     result += "  signal.innerText = signalValue + ' dBm';\n";
     result += "}, 5000 );\n";
   }
-  result += "let currentUrl = window.location.pathname;\n";
-  result += "if( currentUrl == '/device' || currentUrl == '/network' || currentUrl == '/auth' ) {\n"; // load this only on setup page!
-  result += "  function renderRows( checkbox, classname ) {\n";
-  result += "    if( checkbox === null || checkbox === undefined || checkbox === \"\" || classname === null || classname === undefined || classname === \"\" ) return;\n";
-  result += "    let rows = document.getElementsByClassName( classname );\n";
-  result += "    if( rows === null || rows === undefined || rows === \"\" ) return;\n";
-  result += "    if( checkbox.checked == true ) {\n";
-  result += "      for (i = 0; i < rows.length; i++) {\n";
-  result += "        rows[i].style.display = 'table-row';\n";
-  result += "      }\n";
-  result += "    } else {\n";
-  result += "      for (i = 0; i < rows.length; i++) {\n";
-  result += "        rows[i].style.display = 'none';\n";
-  result += "      }\n";
-  result += "    }\n";
-  result += "  }\n";
-  result += "  function renderGC() {\n"; // en/disable debug, depending on geigercounter en/disabled and vice versa
-  result += "    gcsensorbox = document.getElementById('gcsensor');\n";
-  result += "    debugbox = document.getElementById('debug');\n";
-  result += "    if( gcsensorbox === null || gcsensorbox === undefined || debugbox === null || debugbox === undefined ) return;\n";
-  result += "    if( gcsensorbox.checked ) {\n";
-  result += "      debugbox.disabled = true;\n";
-  result += "      debugbox.checked = false;\n";
-  result += "    } else {\n";
-  result += "      debugbox.disabled = false;\n";
-  result += "    }\n";
-  result += "    if( debugbox.checked ) {\n";
-  result += "      gcsensorbox.disabled = true;\n";
-  result += "      gcsensorbox.checked = false;\n";
-  result += "    } else {\n";
-  result += "      gcsensorbox.disabled = false;\n";
-  result += "    }\n";
-  result += "  }\n";
-  result += "  function createToken( length ) {\n";
-  result += "    var result           = '';\n";
-  result += "    var characters       = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789';\n";
-  result += "    var charactersLength = characters.length;\n";
-  result += "    for ( var i = 0; i < length; i++ ) {\n";
-  result += "      result += characters.charAt(Math.floor(Math.random() * charactersLength));\n";
-  result += "    }\n";
-  result += "    return result;\n";
-  result += "  }\n";
-  result += "  function generateToken( tokenFildId ) {\n";
-  result += "    let tokenField = document.getElementById( tokenFildId );\n";
-  result += "    if( tokenField.value == null || tokenField.value == undefined ) return;\n";
-  result += "    if( tokenField.value != \"\" ) {\n";
-  result += "      let confirmed = window.confirm('Reset current Token?')\n"; 
-  result += "      if( confirmed ) tokenField.value = createToken( 16 );\n";
-  result += "    } else {\n";
-  result += "      tokenField.value = createToken( 16 );\n";
-  result += "    }\n";
-  result += "  }\n";
-  result += "  function toggleVisibility( pwFieldId ) {\n";
-  result += "    let pwField = document.getElementById( pwFieldId );\n";
-  result += "    if( pwField.type == 'text' ) {\n";
-  result += "      pwField.type = 'password';\n";
-  result += "    } else {\n";
-  result += "      pwField.type = 'text';\n";
-  result += "    }\n";
-  result += "  }\n";
-  result += "  window.onload = function () {\n";
-  result += "    renderRows( document.getElementById( 'authentication'), \"authRow\" );\n";
-  result += "    renderRows( document.getElementById( 'tokenauth'), \"tokenAuthRow\" );\n";
-  result += "    renderRows( document.getElementById( 'mcp3008sensor'), \"mcpChannelsRow\" );\n";
-  result += "    renderRows( document.getElementById( 'staticIP'), \"staticIPRow\" );\n";
-  result += "    renderRows( document.getElementById( 'secpush'), \"secPushRow\" );\n";
-  result += "    renderGC();\n";
-  result += "  };\n";
-  result += "};\n";
+  if( currentRequest == "networksetup" || currentRequest == "devicesetup" || currentRequest == "authsetup" ) {
+    //result += "let currentUrl = window.location.pathname;\n";
+    //result += "if( currentUrl == '/device' || currentUrl == '/network' || currentUrl == '/auth' ) {\n"; // load this only on setup page!
+    result += "  function renderRows( checkbox, classname ) {\n";
+    result += "    if( checkbox === null || checkbox === undefined || checkbox === \"\" || classname === null || classname === undefined || classname === \"\" ) return;\n";
+    result += "    let rows = document.getElementsByClassName( classname );\n";
+    result += "    if( rows === null || rows === undefined || rows === \"\" ) return;\n";
+    result += "    if( checkbox.checked == true ) {\n";
+    result += "      for (i = 0; i < rows.length; i++) {\n";
+    result += "        rows[i].style.display = 'table-row';\n";
+    result += "      }\n";
+    result += "    } else {\n";
+    result += "      for (i = 0; i < rows.length; i++) {\n";
+    result += "        rows[i].style.display = 'none';\n";
+    result += "      }\n";
+    result += "    }\n";
+    result += "  }\n";
+    if( currentRequest == "devicesetup" ) {
+      result += "  function renderGC() {\n"; // en/disable debug, depending on geigercounter en/disabled and vice versa
+      result += "    gcsensorbox = document.getElementById('gcsensor');\n";
+      result += "    debugbox = document.getElementById('debug');\n";
+      result += "    if( gcsensorbox === null || gcsensorbox === undefined || debugbox === null || debugbox === undefined ) return;\n";
+      result += "    if( gcsensorbox.checked ) {\n";
+      result += "      debugbox.disabled = true;\n";
+      result += "      debugbox.checked = false;\n";
+      result += "    } else {\n";
+      result += "      debugbox.disabled = false;\n";
+      result += "    }\n";
+      result += "    if( debugbox.checked ) {\n";
+      result += "      gcsensorbox.disabled = true;\n";
+      result += "      gcsensorbox.checked = false;\n";
+      result += "    } else {\n";
+      result += "      gcsensorbox.disabled = false;\n";
+      result += "    }\n";
+      result += "  }\n";
+    }
+    if( currentRequest == "authsetup" ) {
+      result += "  function createToken( length ) {\n";
+      result += "    var result           = '';\n";
+      result += "    var characters       = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789';\n";
+      result += "    var charactersLength = characters.length;\n";
+      result += "    for ( var i = 0; i < length; i++ ) {\n";
+      result += "      result += characters.charAt(Math.floor(Math.random() * charactersLength));\n";
+      result += "    }\n";
+      result += "    return result;\n";
+      result += "  }\n";
+      result += "  function generateToken( tokenFildId ) {\n";
+      result += "    let tokenField = document.getElementById( tokenFildId );\n";
+      result += "    if( tokenField.value == null || tokenField.value == undefined ) return;\n";
+      result += "    if( tokenField.value != \"\" ) {\n";
+      result += "      let confirmed = window.confirm('Reset current Token?')\n";
+      result += "      if( confirmed ) tokenField.value = createToken( 16 );\n";
+      result += "    } else {\n";
+      result += "      tokenField.value = createToken( 16 );\n";
+      result += "    }\n";
+      result += "  }\n";
+      result += "  function toggleVisibility( pwFieldId ) {\n";
+      result += "    let pwField = document.getElementById( pwFieldId );\n";
+      result += "    if( pwField.type == 'text' ) {\n";
+      result += "      pwField.type = 'password';\n";
+      result += "    } else {\n";
+      result += "      pwField.type = 'text';\n";
+      result += "    }\n";
+      result += "  }\n";
+    }
+    result += "  window.onload = function () {\n";
+    if( currentRequest == "networksetup" ) result += "    renderRows( document.getElementById( 'staticIP'), \"staticIPRow\" );\n";
+    if( currentRequest == "devicesetup" ) {
+      result += "    renderRows( document.getElementById( 'mq135sensor'), \"mqPreRow\" );\n";
+      result += "    renderRows( document.getElementById( 'bme280sensor'), \"bmePreRow\" );\n";
+      result += "    renderRows( document.getElementById( 'mcp3008sensor'), \"mcpChannelsRow\" );\n";
+      result += "    renderGC();\n";
+    }
+    if( currentRequest == "authsetup" ) {
+      result += "    renderRows( document.getElementById( 'authentication'), \"authRow\" );\n";
+      result += "    renderRows( document.getElementById( 'tokenauth'), \"tokenAuthRow\" );\n";
+      result += "    renderRows( document.getElementById( 'secpush'), \"secPushRow\" );\n";
+      result += "    renderRows( document.getElementById( 'https'), \"httpsRow\" );\n";
+    }
+    result += "  };\n";
+    //result += "};\n";
+  }
   return result;
 }
 
@@ -1103,8 +1276,6 @@ String htmlHead() {
   result += "  <title>" + String( dnsname ) + "</title>\n";
   result += "  <meta http-equiv='content-type' content='text/html; charset=UTF-8'>\n";
   result += "  <meta name='viewport' content='width=device-width, minimum-scale=1.0, maximum-scale=1.0'>\n";
-  //result += "  <link id='favicon' rel='shortcut icon' type='image/png' href='data:image/png;base64,AAABAAEAMDAAAAEAIAAyBQAAFgAAAIlQTkcNChoKAAAADUlIRFIAAAAwAAAAMAgGAAAAVwL5hwAABPlJREFUaIG92WmoVVUUB/Cf+crqpYWmNFFaUmEZaUQFiUVlEUFlAxI2iBVNUIRBQcSiMIogm6GiCRtIGpSygeqDhWKkNlhGFBpGRGrmUGb1rD7s+47X6zn3nXvvef1hce69e+2117p7n3X+ax2qRthTmCAMavi9X9DVDzaPxod4S1iGbXhc+Kkf1jKgMkthHzyNITitYfR5XCn8Wdl6NexSoa1BOMXOzm/Dssz5KGGpjE4NVe7ALngI1zeMbMYMLBK+bJgzHGdgBNZgubC8lWWrDGBPvIlTc0b/xu/YiAX4AIdjOoZi15rOFnyLW4QF2U6EQlQXQFpoGKbiYNzcobXXcI2wtplSdfdAIPwiPIhvKrA4GSuEszL7OahmByKTg/AMJkrHogr8jmOElXmDne1A1F3D2fgOp6vOeejGzKLBqgK4FfNpePpWh9FFA+0HENn1GtzVtp1yuLtooL0AIpPDcJ/+oSQ9+AFThdeLbuJOF34Ue3VooxGbJC41F3OEzeiHLBT2o2OCthUrsBarpAfhJ9gkbK2t0/RB1slNfFQHc+FFjMSXmC9cK8zHmsx5+uRF5QKIXEOTS81N+Dvnt7OwFJdhlnDFDuuVRGtHKEzDDdgPw5XP9/Ml/nN/E50eLBBOb8WlvncgsuvVEt8fjwO09rA6Hi9JPOlHydlGdGFYCzZRNoDENDshZyPwLt7BKFwlny+dna1ZEsVHKHTjCWzAOtxR3mwhVmCCsL6WxZ6SnP5ICu4BbKkqgGH4GIe17W4+XsU0afcH4iS8J/zVjrH8IxQSNU4Z4rd2DOeg99xPxgtSYbMKw4W/2u1aNNuB/bFIKk4aA12MMVIB3xe24gLp5s/jTMuE48o4m4fiHUj//Nc5oz1S7TuhhP0PpX/4LSn75OHOujVbRrMjtLnG8V9uGO3CCcIXeKXA7jY8JkwU2RE8t0D3XmFMX5ShCMVpdLuxm9ipGhpXy1L3Fcxeh9vrbI2VqrR69GA9jsDbwl7tBFDMRiOTNXozUdgDj0gPsX+kCmwlDm2Y3Y0T8Xbt+3opqN7M0y21W46vBbBP3U61hPJUIuy8xaELT1LHY7ZjA2bhYeHXWu0wXHL+YhyDS4RVmf36a0l0Qqd75SLMVlxOrsaNwty6uV1SHbFR+LdtH1TRlQgD8IXU1G2uyUyhp90bNg+dBRCZjJUKkb6K+tmYLnLpdVvovCuRZLnU1O2LDlwqZbXK0HlnLjJZKKXKVX3MuE7Yt+N1a6imtRiZLMY43IM/CrRHShmoElTdGyVsxG1S23xTgfakqpZtxoV2/twXdpy3UHrhkYdDWrDaFM240IXCgLbSXWTyqZSdGlFZC7LZEZqhtc5DEfJq58pe+DULYB3OEwa2vAuRyWgcm6OxsEWLhWgWwAeYQotUNzLZG3NyNLZKdUIlaBbAPImtvi8MLhVEZLKbVPuOy9F6FT/3L5VIxgfhWWkX1uNMLM3IV+yg2/t5VynHz8OBOZbXYpLwWUde16E5FwpjpJbHUOlVz5N4Vvi8Qe8QnCzVvucXWNuCKcIb/y+ZC+OxpE53g/S6dLV0BA/AYKnA363Ayvc4R/iqZvN/CiAyGSW1vo9U/um9TQr0OdyatU6iLT8LUWYHeqUbl+NCqRm1e472JqnEXCI1xeYK63awUzHK1QP1i6dAhkj9zv1rv26RjtQf+BO/iVojq35uP+A/urI6Gkydy9MAAAAASUVORK5CYII=' />\n";
-  //result += "  <link id='favicon' rel='shortcut icon' type='image/png' href='" + faviconString( "image/png" ) + "' />\n";
   result += "  <script type='text/javascript'>\n" + htmlJS() + "\n</script>\n";
   result += "  <style>\n" + htmlCSS() + "\n</style>\n";
   result += "</head>\n";
@@ -1168,17 +1339,17 @@ void handle_root() {
   String result( ( char * ) 0 );
   result.reserve( 2000 );
   // create current checksum
-  String checksumString = sha1( String( ssid ) + String( password ) + String( dnsname ) + String( place ) 
-      + String( (int) authentication ) + String( authuser ) + String( authpass ) 
-      + String( (int) tokenauth ) + String( token ) 
-      + String( (int) secpush ) + String( secpushtime ) 
-      + String( mcpchannels ) + String( (int) silent ) + String( (int) gcsensor ) + String( (int) mq135sensor ) 
-      + String( (int) bme280sensor ) + String( (int) ds18b20sensor ) + String( (int) mcp3008sensor ) + String( (int) debug ) 
-      + String( (int) staticIP ) + ip2Str( ipaddr ) + ip2Str( gateway ) + ip2Str( subnet ) + ip2Str( dns1 ) + ip2Str( dns2 ) 
+  String checksumString = sha1( String( ssid ) + String( password ) + String( dnsname ) + String( place )
+      + String( (int) authentication ) + String( authuser ) + String( authpass )
+      + String( (int) tokenauth ) + String( token )
+      + String( (int) secpush ) + String( secpushtime )
+      + String( mcpchannels ) + String( (int) silent ) + String( (int) gcsensor ) + String( (int) mq135sensor ) + String( mqpre )
+      + String( (int) bme280sensor ) + String( bmepre ) + String( (int) ds18b20sensor ) + String( (int) mcp3008sensor ) + String( mcppre ) + String( (int) debug )
+      + String( (int) staticIP ) + ip2Str( ipaddr ) + ip2Str( gateway ) + ip2Str( subnet ) + ip2Str( dns1 ) + ip2Str( dns2 )
       );
   char checksum[ eepromchk ];
   checksumString.toCharArray(checksum, eepromchk); // write checksumString (Sting) into checksum (char Arr)
-  result += "<h2>Info</h2>\n";
+  result += "<h2>About</h2>\n";
   result += "<p>A Prometheus scrape ready BME280/MQ135/DS18B20/Geigercounter Node Exporter.<br />\n";
   result += "Just add this Node to your prometheus.yml as Target to collect Air Pressure,<br />\n";
   result += "Air Humidity, Temperatures, Radiation and some Air Quality Data like Alcohole,<br />\n";
@@ -1209,20 +1380,22 @@ void handle_root() {
     result += "  <tr><td>Geigercounter</td><td>MightyOhm Geigercounter</td><td>(RX " + String( (int) gcrx, HEX ) + ", TX " + String( (int) gctx, HEX ) + ")</td></tr>\n";
   }
   if( mq135sensor ) {
-    result += "  <tr><td>MQ135</td><td>Air Quality Sensor</td><td>(Pin " + String( mqpin ) + ")</td></tr>\n";
+    result += "  <tr><td>MQ135</td><td>Air Quality Sensor</td><td>(Pin " + String( mqpin ) + ", Precission " + String( mqpre ) + ")</td></tr>\n";
   }
   if( ds18b20sensor ) {
-    result += "  <tr><td>DS18B20</td><td>Temperature Sensor</td><td>(Pin " + String( onewire ) + ")</td></tr>\n";
+    result += "  <tr><td>DS18B20</td><td>Temperature Sensor</td><td>(Pin " + String( onewire ) + ", Precission " + String( ds18pre ) + ")</td></tr>\n";
   }
   if( bme280sensor ) {
-    //char pinBuffer[7]; // buffer for hex pins
+    //char pinBuffer[7]; // buffer for hex pinsInf
     //sprintf(pinBuffer, "%02x", ( BME280_ADDRESS ) );
-    result += "  <tr><td>BME280</td><td>Air Temperature, Humidity and Pressure Sensor</td><td>(Adress " + String( BME280_ADDRESS ) + ")</td></tr>\n";
+    result += "  <tr><td>BME280</td><td>Air Temperature, Humidity and Pressure Sensor</td><td>(Adress " + String( BME280_ADDRESS ) + ", Precission " + String( bmepre ) + ")</td></tr>\n";
   }
   if( mcp3008sensor ) {
-    result += "  <tr><td>MCP3008</td><td>MCP3008 Analoge Digital Converter</td><td>Pin " + String( mqpin ) + " (Channels " + String( mcpchannels ) + ")</td></tr>\n";
+    result += "  <tr><td>MCP3008</td><td>MCP3008 Analoge Digital Converter</td><td>Pin " + String( mqpin ) + " (Channels " + String( mcpchannels ) + ", Precission " + String( mcppre ) + ")</td></tr>\n";
   }
-  result += "  <tr><td></td><td></td><td></td></tr>\n"; // space line
+  result += "</table>\n";
+  result += "<h2>Setup Overview</h2>\n";
+  result += "<table>\n";
   result += "  <tr><td>DNS Search Domain: </td><td>" + dnssearch + "</td><td></td></tr>\n";
   // Silent
   if( silent ) {
@@ -1244,12 +1417,16 @@ void handle_root() {
   }
   // Authentification
   if( authentication ) {
-    result += "  <tr><td>Basic Auth</td><td>Enabled</td><td>&#128274;</td></tr>\n";
+    result += "  <tr><td>Basic Auth</td><td>Enabled</td><td></td></tr>\n"; // &#128274;
   } else {
-    result += "  <tr><td>Basic Auth</td><td>Disabled</td><td>&#128275;</td></tr>\n";
+    result += "  <tr><td>Basic Auth</td><td>Disabled</td><td></td></tr>\n"; // &#128275;
   }
   if( tokenauth ) {
-    result += "  <tr><td>Token Auth</td><td>Enabled</td><td>&#128273; Token: " + String( token ) + "</td></tr>\n";
+    if( authentication ) {
+      result += "  <tr><td>Token Auth</td><td>Enabled</td><td>Token: " + String( token ) + "</td></tr>\n"; // &#128273;
+    } else {
+      result += "  <tr><td>Token Auth</td><td>Enabled</td><td></td></tr>\n"; // &#128273;
+    }
   }
   // SecPush
   if( secpush ) {
@@ -1311,52 +1488,6 @@ void notFoundHandler() {
   server.send( 404, "text/html", htmlBody( result ) );
 }
 
-// favicon image as base64 String
-String faviconString( String textType ) {
-  //String favicon = "";
-  String favicon( ( char * ) 0 );
-  favicon.reserve( 1830 );
-  favicon += "data:" + textType + ";base64,";
-  favicon += "AAABAAEAMDAAAAEAIAAyBQAAFgAAAIlQTkcNChoKAAAADUlIRFIAAAAwAAAAMAgGAAAAVwL5hwAABPl";
-  favicon += "JREFUaIG92WmoVVUUB/Cf+crqpYWmNFFaUmEZaUQFiUVlEUFlAxI2iBVNUIRBQcSiMIogm6GiCRtIGp";
-  favicon += "SygeqDhWKkNlhGFBpGRGrmUGb1rD7s+47X6zn3nXvvef1hce69e+2117p7n3X+ax2qRthTmCAMavi9X";
-  favicon += "9DVDzaPxod4S1iGbXhc+Kkf1jKgMkthHzyNITitYfR5XCn8Wdl6NexSoa1BOMXOzm/Dssz5KGGpjE4N";
-  favicon += "Ve7ALngI1zeMbMYMLBK+bJgzHGdgBNZgubC8lWWrDGBPvIlTc0b/xu/YiAX4AIdjOoZi15rOFnyLW4Q";
-  favicon += "F2U6EQlQXQFpoGKbiYNzcobXXcI2wtplSdfdAIPwiPIhvKrA4GSuEszL7OahmByKTg/AMJkrHogr8jm";
-  favicon += "OElXmDne1A1F3D2fgOp6vOeejGzKLBqgK4FfNpePpWh9FFA+0HENn1GtzVtp1yuLtooL0AIpPDcJ/+o";
-  favicon += "SQ9+AFThdeLbuJOF34Ue3VooxGbJC41F3OEzeiHLBT2o2OCthUrsBarpAfhJ9gkbK2t0/RB1slNfFQH";
-  favicon += "c+FFjMSXmC9cK8zHmsx5+uRF5QKIXEOTS81N+Dvnt7OwFJdhlnDFDuuVRGtHKEzDDdgPw5XP9/Ml/nN";
-  favicon += "/E50eLBBOb8WlvncgsuvVEt8fjwO09rA6Hi9JPOlHydlGdGFYCzZRNoDENDshZyPwLt7BKFwlny+dna";
-  favicon += "1ZEsVHKHTjCWzAOtxR3mwhVmCCsL6WxZ6SnP5ICu4BbKkqgGH4GIe17W4+XsU0afcH4iS8J/zVjrH8I";
-  favicon += "xQSNU4Z4rd2DOeg99xPxgtSYbMKw4W/2u1aNNuB/bFIKk4aA12MMVIB3xe24gLp5s/jTMuE48o4m4fi";
-  favicon += "HUj//Nc5oz1S7TuhhP0PpX/4LSn75OHOujVbRrMjtLnG8V9uGO3CCcIXeKXA7jY8JkwU2RE8t0D3XmF";
-  favicon += "MX5ShCMVpdLuxm9ipGhpXy1L3Fcxeh9vrbI2VqrR69GA9jsDbwl7tBFDMRiOTNXozUdgDj0gPsX+kCm";
-  favicon += "wlDm2Y3Y0T8Xbt+3opqN7M0y21W46vBbBP3U61hPJUIuy8xaELT1LHY7ZjA2bhYeHXWu0wXHL+YhyDS";
-  favicon += "4RVmf36a0l0Qqd75SLMVlxOrsaNwty6uV1SHbFR+LdtH1TRlQgD8IXU1G2uyUyhp90bNg+dBRCZjJUK";
-  favicon += "kb6K+tmYLnLpdVvovCuRZLnU1O2LDlwqZbXK0HlnLjJZKKXKVX3MuE7Yt+N1a6imtRiZLMY43IM/CrR";
-  favicon += "HShmoElTdGyVsxG1S23xTgfakqpZtxoV2/twXdpy3UHrhkYdDWrDaFM240IXCgLbSXWTyqZSdGlFZC7";
-  favicon += "LZEZqhtc5DEfJq58pe+DULYB3OEwa2vAuRyWgcm6OxsEWLhWgWwAeYQotUNzLZG3NyNLZKdUIlaBbAP";
-  favicon += "Imtvi8MLhVEZLKbVPuOy9F6FT/3L5VIxgfhWWkX1uNMLM3IV+yg2/t5VynHz8OBOZbXYpLwWUde16E5";
-  favicon += "FwpjpJbHUOlVz5N4Vvi8Qe8QnCzVvucXWNuCKcIb/y+ZC+OxpE53g/S6dLV0BA/AYKnA363Ayvc4R/i";
-  favicon += "qZvN/CiAyGSW1vo9U/um9TQr0OdyatU6iLT8LUWYHeqUbl+NCqRm1e472JqnEXCI1xeYK63awUzHK1Q";
-  favicon += "P1i6dAhkj9zv1rv26RjtQf+BO/iVojq35uP+A/urI6Gkydy9MAAAAASUVORK5CYII=";
-  return favicon;
-}
-
-void faviconIcoHandler() {
-  //debugOut( "FaviconX" );
-  String textType = "image/x-icon";
-  webString = faviconString( textType );
-  response( webString, textType );
-}
-
-void faviconPngHandler() {
-  //debugOut( "FaviconPNG" );
-  String textType = "image/png";
-  webString = faviconString( textType );
-  response( webString, textType );
-}
-
 // Signal Handler
 void signalHandler() {
   //debugOut( "WiFiSignal" );
@@ -1392,7 +1523,7 @@ void networkSetupHandler() {
   result += "  </tr>\n";
   result += "  <tr>\n";
   result += "    <td><label for='password'>Password<span style='color:red'>*</span>: </label></td>\n";
-  result += "    <td><input id='password' name='password' type='password' placeholder='Wifi Password' value='" + String( password ) + "' size='" + String( eepromStringSize ) + "' /></td>\n";
+  result += "    <td><input id='password' name='password' type='password' placeholder='Wifi Password' value='" + String( password ) + "' size='" + String( eepromPassStringSize ) + "' /></td>\n";
   result += "  </tr>\n";
   result += "  <tr>\n";
   result += "    <td><label for='dnsname'>DNS Name<span style='color:red'>*</span>: </label></td>\n";
@@ -1460,7 +1591,7 @@ void networkFormHandler() {
   String ssidString = server.arg("ssid");
   ssidString.toCharArray(ssid, eepromStringSize);
   String passwordString = server.arg("password");
-  passwordString.toCharArray(password, eepromStringSize);
+  passwordString.toCharArray(password, eepromPassStringSize);
   String dnsnameString = server.arg("dnsname");
   dnsnameString.toCharArray(dnsname, eepromStringSize);
   // Static IP stuff
@@ -1539,12 +1670,20 @@ void deviceSetupHandler() {
   strcpy( activeState, ( mq135sensor ? "checked" : "" ) );
   result += "  <tr>\n";
   result += "    <td><label for='mq135sensor'>MQ-135 Sensors: </label></td>\n";
-  result += "    <td><input id='mq135sensor' name='mq135sensor' type='checkbox' " + String( activeState ) + "  /></td>\n";
+  result += "    <td><input id='mq135sensor' name='mq135sensor' type='checkbox' " + String( activeState ) + " onclick='renderRows( this, \"mqPreRow\" )' /></td>\n";
+  result += "  </tr>\n";
+  result += "  <tr class='mqPreRow'>\n";
+  result += "    <td>&#8627;<label for='bmepre'>Precission: </label></td>\n";
+  result += "    <td><input id='mqpre' name='mqpre' type='number' min='0' max='" + String( defpre ) + "' value='" + String( mqpre ) + "' /></td>\n";
   result += "  </tr>\n";
   strcpy( activeState, ( bme280sensor ? "checked" : "" ) );
   result += "  <tr>\n";
   result += "    <td><label for='bme280sensor'>BME280 Sensors: </label></td>\n";
-  result += "    <td><input id='bme280sensor' name='bme280sensor' type='checkbox' " + String( activeState ) + "  /> <span style='color:red'>**</span></td>\n";
+  result += "    <td><input id='bme280sensor' name='bme280sensor' type='checkbox' " + String( activeState ) + " onclick='renderRows( this, \"bmePreRow\" )' /></td>\n";
+  result += "  </tr>\n";
+  result += "  <tr class='bmePreRow'>\n";
+  result += "    <td>&#8627;<label for='bmepre'>Precission: </label></td>\n";
+  result += "    <td><input id='bmepre' name='bmepre' type='number' min='0' max='" + String( defpre ) + "' value='" + String( bmepre ) + "' /></td>\n";
   result += "  </tr>\n";
   strcpy( activeState, ( ds18b20sensor ? "checked" : "" ) );
   result += "  <tr>\n";
@@ -1557,7 +1696,11 @@ void deviceSetupHandler() {
   result += "    <td><input id='mcp3008sensor' name='mcp3008sensor' type='checkbox' " + String( activeState ) + " onclick='renderRows( this, \"mcpChannelsRow\" )' /></td>\n";
   result += "  </tr>\n";
   result += "  <tr class='mcpChannelsRow'>\n";
-  result += "    <td><label for='mcpchannels'>MCP Channels: </label></td>\n";
+  result += "    <td>&#8627;<label for='mcppre'>Precission: </label></td>\n";
+  result += "    <td><input id='mcppre' name='mcppre' type='number' min='0' max='" + String( defpre ) + "' value='" + String( mcppre ) + "' /></td>\n";
+  result += "  </tr>\n";
+  result += "  <tr class='mcpChannelsRow'>\n";
+  result += "    <td>&#8627;<label for='mcpchannels'>Channels: </label></td>\n";
   result += "    <td><input id='mcpchannels' name='mcpchannels' type='number' min='0' max='8' value='" + String( mcpchannels ) + "' /></td>\n";
   result += "  </tr>\n";
   result += "  <tr><td>&nbsp;</td><td></td></tr>\n"; // dummy line
@@ -1591,9 +1734,15 @@ void deviceFormHandler() {
   mcpchannels = mcpchannelsString.toInt();
   gcsensor = server.arg("gcsensor") == "on" ? true : false;
   mq135sensor = server.arg("mq135sensor") == "on" ? true : false;
+  String mqpreString = server.arg("mqpre");
+  mqpre = mqpreString.toInt();
   bme280sensor = server.arg("bme280sensor") == "on" ? true : false;
+  String bmepreString = server.arg("bmepre");
+  bmepre = bmepreString.toInt();
   ds18b20sensor = server.arg("ds18b20sensor") == "on" ? true : false;
   mcp3008sensor = server.arg("mcp3008sensor") == "on" ? true : false;
+  String mcppreString = server.arg("mcppre");
+  mcppre = mcppreString.toInt();
   // save data into eeprom
   bool result = saveSettings();
   delay(50);
@@ -1631,7 +1780,7 @@ void authSetupHandler() {
   result += "  </tr>\n";
   result += "  <tr class='authRow'>\n";
   result += "    <td><label for='authpass'>User Password: </label></td>\n";
-  result += "    <td><input id='authpass' name='authpass' type='password' placeholder='Password' value='" + String( authpass ) + "' size='" + String( eepromStringSize ) + "' />\n";
+  result += "    <td><input id='authpass' name='authpass' type='password' placeholder='Password' value='" + String( authpass ) + "' size='" + String( eepromPassStringSize ) + "' />\n";
   result += "    <button name='showpw' type='button' onclick='toggleVisibility( \"authpass\" )'>&#128065;</button></td>\n";
   result += "  </tr>\n";
   result += "  <tr><td>&nbsp;</td><td></td></tr>\n"; // dummy line
@@ -1644,7 +1793,7 @@ void authSetupHandler() {
   result += "  <tr class='tokenAuthRow'>\n";
   result += "    <td><label for='token'>Token: </label></td>\n";
   result += "    <td>\n";
-  result += "      <input id='token' name='token' type='password' placeholder='' value='" + String( token ) + "' size='" + String( eepromStringSize ) + "' /> \n";
+  result += "      <input id='token' name='token' type='password' placeholder='' value='" + String( token ) + "' size='" + String( eepromPassStringSize ) + "' /> \n";
   result += "      <button name='showtoken' type='button' onclick='toggleVisibility( \"token\" )'>&#128065;</button>";
   result += "<button name='genToken' type='button' onclick='generateToken( \"token\" )'>Generate Token</button>\n";
   result += "    </td>\n";
@@ -1682,11 +1831,11 @@ void authFormHandler() {
   String authuserString = server.arg("authuser");
   authuserString.toCharArray(authuser, eepromStringSize);
   String authpassString = server.arg("authpass");
-  authpassString.toCharArray(authpass, eepromStringSize);
+  authpassString.toCharArray(authpass, eepromPassStringSize);
   // Token based Authentication stuff
   tokenauth = server.arg("tokenauth") == "on" ? true : false;
   String tokenString = server.arg("token");
-  tokenString.toCharArray(token, eepromStringSize);
+  tokenString.toCharArray(token, eepromPassStringSize);
   secpush = server.arg("secpush") == "on" ? true : false;
   String secpushtimeString = server.arg("secpushtime");
   secpushtime = secpushtimeString.toInt();
@@ -1752,17 +1901,17 @@ void metricsHandler() {
   currentRequest = "metrics";
   debugOut( currentRequest );
   authorisationHandler();
-  String checksumString = sha1( String( ssid ) + String( password ) + String( dnsname ) + String( place ) 
+  unsigned long currentMillis = millis();
+  String checksumString = sha1( String( ssid ) + String( password ) + String( dnsname ) + String( place )
     + String( (int) authentication ) + String( authuser ) + String( authpass )
-    + String( (int) tokenauth ) + String( token ) 
-    + String( (int) secpush ) + String( secpushtime ) 
-    + String( mcpchannels ) + String( (int) silent )  + String( (int) gcsensor ) + String( (int) mq135sensor ) 
-    + String( (int) bme280sensor ) + String( (int) ds18b20sensor ) + String( (int) mcp3008sensor ) + String( (int) debug ) 
-    + String( (int) staticIP ) + ip2Str( ipaddr ) + ip2Str( gateway ) + ip2Str( subnet ) + ip2Str( dns1 ) + ip2Str( dns2 ) 
+    + String( (int) tokenauth ) + String( token )
+    + String( (int) secpush ) + String( secpushtime )
+    + String( mcpchannels ) + String( (int) silent )  + String( (int) gcsensor ) + String( (int) mq135sensor ) + String( mqpre )
+    + String( (int) bme280sensor ) + String( bmepre ) + String( (int) ds18b20sensor ) + String( (int) mcp3008sensor ) + String( mcppre ) + String( (int) debug )
+    + String( (int) staticIP ) + ip2Str( ipaddr ) + ip2Str( gateway ) + ip2Str( subnet ) + ip2Str( dns1 ) + ip2Str( dns2 )
     );
   char checksum[ eepromchk ];
   checksumString.toCharArray(checksum, eepromchk); // write checksumString (Sting) into checksum (char Arr)
-  unsigned long currentMillis = millis();
   webString = "";
   // Info and Voltage 
   webString += "# HELP esp_firmware_build_info A metric with a constant '1' value labeled by version, board type, dhttype and dhtpin\n";
@@ -1875,7 +2024,12 @@ void metricsHandler() {
   }
   if( mq135sensor ) {
     // MQ135 Output
+//    unsigned long mqcurrentMillis = millis();
     webString += getMQ135Data();
+//    long MQRuntime = millis() - mqcurrentMillis;
+//    webString += "# HELP esp_mq_runtime Time in milliseconds to read Date from the MQ Sensor\n";
+//    webString += "# TYPE esp_mq_runtime gauge\n";
+//    webString += "esp_mq_runtime " + String( MQRuntime ) + "\n";
   }
   // Total Runtime
   long TOTALRuntime = millis() - currentMillis;
@@ -1919,6 +2073,8 @@ void setup() {
     Serial.println( "`----------------------´" );
     Serial.print( "Starting Device: " );
     Serial.println( dnsname );
+    Serial.print( "Software Version: " );
+    Serial.println( history );
   }
   
   // start Wifi mode depending on Load Config (no valid config = start in AP Mode)
@@ -2034,16 +2190,16 @@ void setup() {
     if( debug ) Serial.println( "initialize MQ135 Analog Sensor" );
     //MQ135.inicializar();
     //MQ135.setVoltResolution( 5 );
-    MQ135.setRegressionMethod(1);
-    MQ135.init();
+    MQ2.setRegressionMethod(1);
+    MQ2.init();
     if( debug ) Serial.print("Calibrating please wait.");
     float calcR0 = 0;
     for(int i = 1; i<=10; i ++) {
-      MQ135.update(); // Update data, the arduino will be read the voltage on the analog pin
-      calcR0 += MQ135.calibrate( RatioMQ135CleanAir );
+      MQ2.update(); // Update data, the arduino will be read the voltage on the analog pin
+      calcR0 += MQ2.calibrate( RatioMQ2CleanAir );
       if( debug ) Serial.print(".");
     }
-    MQ135.setR0(calcR0/10);
+    MQ2.setR0(calcR0/10);
     if( debug ) Serial.println("  done!.");
     if( isinf( calcR0 ) ) {
       if( debug ) Serial.println("Warning: Conection issue founded, R0 is infite (Open circuit detected) please check your wiring and supply"); 
@@ -2065,6 +2221,7 @@ void setup() {
     // Wire connection for bme Sensor
     Wire.begin();
     BMEstatus = bme.begin();  
+    printArr( temp );
     //if (!BMEstatus) { while (1); }
   }
 
@@ -2104,10 +2261,6 @@ void setup() {
 
   // android captive portal detection request
   server.on( "/generate_204", captiveHandler );
-
-  // dummy favicon handling
-  server.on( "/favicon.ico", HTTP_GET, faviconIcoHandler );
-  server.on( "/favicon.png", HTTP_GET, faviconPngHandler );
   
   // simple wifi signal strength
   server.on( "/signal", HTTP_GET, signalHandler );

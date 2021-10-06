@@ -35,15 +35,14 @@ There is also a [svg](https://github.com/vaddi/d1mini_node/blob/master/assets/im
 
 Open the `d1mini_node.ino` File into an Arduino IDE.  
 1. Set Board: `tools` -> `Board` -> `LOLIN(WEMOS) D1 R2 & mini`  
-2. Set Port: `/dev/cu.wchusbserial1420`*  
-3. Compile and Upload the Sketch  
-4. Place Device to desired destination.  
+2. Set Port: `/dev/cu.wchusbserialXXXX`*
+3. Compile and Upload the Sketc
+4. Place Device to desired destination.
 5. Plugin all Sensors (Pinout in head of *.ino File)  
-6. After plugin the Device will run in Setupmode (On Start LED blinks 3 times). Just grab a Phone and connect to the Wifi named `esp_setup`.  
-7. After connection, they should open a Captive Page in the Browser in wich you can setup the Device by set SSID, Wifi Password, Hostname (DNS Name) and Other Stuff like connected Sensors.  
-8. After Submit the Device will do a Reboot and should then connected as Client into the desired Wifi Network.  
-
-If failed to connect to the Network, Compile by Clear EEPROM (`tools` -> `Erease Flash` -> `All Flash Contents`) and try again. 
+6. Start the Device, it will run now in Setupmode (On Start the LED blinks 3 times). Just grab a Computer/Phone and connect to the Wifi named `esp_setup`.
+7. After connected, a Captive Page should open in a Browser in wich you can setup the Device by set SSID, Wifi Password, Hostname (DNS Name).
+8. After Submit the Device will do a Reboot and should then connected as Client into the desired Wifi Network.
+9. Now open the Device Page in a browser and setup other Stuff like connected Sensors and Security settings.
 
 \* Device Path For example, depend on your System and can has another path  
 
@@ -53,7 +52,7 @@ If failed to connect to the Network, Compile by Clear EEPROM (`tools` -> `Erease
 - MQ135 Air Quality sensor
 - DS18B20 Temperatur Sensors
 - BME280 Air Temperature, Humidity and Pressure Sensor
-- MightyOhm Geigercounter
+- MightyOhm [Geigercounter][]
 - MCP 300X ADC Device for 8 Analog Sensorvalues  
 
 
@@ -74,11 +73,9 @@ Open the `esp8266-01_node.ino` File into an Arduino IDE.
 4. Compile and Upload the Sketch  
 5. Place Device to desired destination.  
 6. Plugin all Sensors (Pinout for DHT11 & DHT22 in *.ino File)  
-7. After plugin the Device will run in Setupmode (On Start LED blinks 3 times). Just grab a Phone and connect to the Wifi named `esp_setup`.  
-8. After connection, they should open a Captive Page in the Browser in wich you can setup the Device by set SSID, Wifi Password, Hostname (DNS Name) and Other Stuff like connected Sensors.  
+7. Start the Device, it will run now in Setupmode (On Start the LED blinks 3 times). Just grab a Computer/Phone and connect to the Wifi named `esp_setup`.  
+8. After connected, a Captive Page should open in a Browser in wich you can setup the Device by set SSID, Wifi Password, Hostname (DNS Name).  
 9. After Submit the Device will do a Reboot and should then connected as Client into the desired Wifi Network.  
-
-If failed to connect to the Network, Compile by Clear EEPROM (`tools` -> `Erease Flash` -> `All Flash Contents`) and try again. 
 
 \* Device Path For example, depend on your System and can has another path  
 
@@ -105,6 +102,11 @@ When no connection to the Node come up:
 - On D1mini Boards you can enable `debug` and plugin via USB. Then read the Debug output by Arduino IDE Serial or via Terminal by `screen /dev/ttyUSB1 9600`.  
 
 
+### Wifi unable to Connect ###
+
+If failed to connect to the Wifi, the LED will blink continuosly. Change the Compile settings to also clear the EEPROM (`tools` -> `Erease Flash` -> `All Flash Contents`) and try again. The Device will start in AC Mode, so you can run the setup again.
+
+
 ### BME280 Adress Problem ###
 
 If the BME280 Sensor dont show any Data:
@@ -120,7 +122,7 @@ to
 
 	#define BME280_ADDRESS        (0x76)
 
-The `BME280_ADDRESS_ALTERNATE` doesn´t seem to work so properly.
+The alternative `BME280_ADDRESS_ALTERNATE` doesn´t seem to work so properly on the Library.
 
 
 
