@@ -1,5 +1,15 @@
 # Changelog #
 
+## 4.3 ##
+
+- More EEPROM bytes for Password variables (max 32 characters)
+
+
+## 4.2 ##
+
+- Add precision to all Sensors
+
+
 ## 4.1 ##
 
 - Add Pressiosion for MCP3008 readings
